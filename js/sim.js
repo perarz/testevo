@@ -283,6 +283,7 @@ export class Sim {
 
   updateCreature(c) {
     const cfg = this.cfg, T = this.terrain, t = c.g.t;
+    c.px = c.x; c.py = c.y;
     c.age++;
     if (c.cooldown > 0) c.cooldown--;
     const biome = T.at(c.x, c.y);

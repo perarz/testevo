@@ -204,16 +204,23 @@ export class Renderer {
       ctx.beginPath(); ctx.arc(m.x, m.y, r, 0, TAU); ctx.fill();
     }
 
+    // płynne przejście między krokami symulacji przy wolnych prędkościach
+    const a = clamp(this.alpha ?? 1, 0, 1);
+    for (const c of sim.creatures) {
+      c.rx = c.px === undefined ? c.x : c.px + (c.x - c.px) * a;
+      c.ry = c.py === undefined ? c.y : c.py + (c.y - c.py) * a;
+    }
+
     // zaznaczony: wzrok
     const sel = this.selected && !this.selected.dead ? this.selected : null;
     if (this.showVision || sel) {
       ctx.lineWidth = 1 / z;
       for (const c of sim.creatures) {
         if (!(this.showVision || c === sel)) continue;
-        if (!inView(c.x, c.y, c.g.t.vision)) continue;
+        if (!inView(c.rx, c.ry, c.g.t.vision)) continue;
         ctx.strokeStyle = c === sel ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.08)';
         ctx.setLineDash(c === sel ? [4 / z, 4 / z] : []);
-        ctx.beginPath(); ctx.arc(c.x, c.y, c.g.t.vision * sim.terrain.at(c.x, c.y).vision, 0, TAU); ctx.stroke();
+        ctx.beginPath(); ctx.arc(c.rx, c.ry, c.g.t.vision * sim.terrain.at(c.rx, c.ry).vision, 0, TAU); ctx.stroke();
       }
       ctx.setLineDash([]);
     }
@@ -222,57 +229,57 @@ export class Renderer {
     const hl = this.highlightSpecies;
     ctx.globalCompositeOperation = 'lighter';
     for (const c of sim.creatures) {
-      if (!inView(c.x, c.y, 40)) continue;
+      if (!inView(c.rx, c.ry, 40)) continue;
       const dim = hl !== null && c.sp !== hl;
       if (dim) continue;
-      const gr = ctx.createRadialGradient(c.x, c.y, c.r * 0.4, c.x, c.y, c.r * 2.8);
+      const gr = ctx.createRadialGradient(c.rx, c.ry, c.r * 0.4, c.rx, c.ry, c.r * 2.8);
       gr.addColorStop(0, this.creatureColor(c, sim, 0.38));
       gr.addColorStop(1, this.creatureColor(c, sim, 0));
       ctx.fillStyle = gr;
-      ctx.beginPath(); ctx.arc(c.x, c.y, c.r * 2.8, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(c.rx, c.ry, c.r * 2.8, 0, TAU); ctx.fill();
     }
     ctx.globalCompositeOperation = 'source-over';
 
     // stworki — ciało
     const now = performance.now();
     for (const c of sim.creatures) {
-      if (!inView(c.x, c.y, 20)) continue;
+      if (!inView(c.rx, c.ry, 20)) continue;
       const dim = hl !== null && c.sp !== hl;
       ctx.globalAlpha = dim ? 0.18 : 1;
       ctx.fillStyle = this.creatureColor(c, sim, 1);
-      ctx.beginPath(); ctx.arc(c.x, c.y, c.r, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(c.rx, c.ry, c.r, 0, TAU); ctx.fill();
       // ciemny środek pokazuje poziom energii
       const ef = clamp(c.energy / c.maxE, 0, 1);
       ctx.fillStyle = 'rgba(5,8,12,0.55)';
-      ctx.beginPath(); ctx.arc(c.x, c.y, c.r * 0.55 * (1 - ef), 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(c.rx, c.ry, c.r * 0.55 * (1 - ef), 0, TAU); ctx.fill();
       // obwódka diety
       const d = c.g.t.diet;
       if (d > 0.33) {
         ctx.strokeStyle = d > 0.66 ? 'rgba(255,90,60,0.95)' : 'rgba(255,170,60,0.85)';
         ctx.lineWidth = Math.max(1, c.r * 0.22);
-        ctx.beginPath(); ctx.arc(c.x, c.y, c.r + ctx.lineWidth * 0.5, 0, TAU); ctx.stroke();
+        ctx.beginPath(); ctx.arc(c.rx, c.ry, c.r + ctx.lineWidth * 0.5, 0, TAU); ctx.stroke();
       }
       // oko w kierunku ruchu
-      const ex = c.x + Math.cos(c.angle) * c.r * 0.62, ey = c.y + Math.sin(c.angle) * c.r * 0.62;
+      const ex = c.rx + Math.cos(c.angle) * c.r * 0.62, ey = c.ry + Math.sin(c.angle) * c.r * 0.62;
       ctx.fillStyle = 'rgba(255,255,255,0.92)';
       ctx.beginPath(); ctx.arc(ex, ey, Math.max(0.9, c.r * 0.24), 0, TAU); ctx.fill();
       if (c.attacking) {
         ctx.strokeStyle = 'rgba(255,60,60,0.9)'; ctx.lineWidth = 1.2;
-        ctx.beginPath(); ctx.arc(c.x, c.y, c.r + 3, c.angle - 0.6, c.angle + 0.6); ctx.stroke();
+        ctx.beginPath(); ctx.arc(c.rx, c.ry, c.r + 3, c.angle - 0.6, c.angle + 0.6); ctx.stroke();
       }
       if (c.hurt && sim.tick - c.hurt < 8) {
         ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.arc(c.x, c.y, c.r + 1.5, 0, TAU); ctx.stroke();
+        ctx.beginPath(); ctx.arc(c.rx, c.ry, c.r + 1.5, 0, TAU); ctx.stroke();
       }
       if (c.infected) {
         ctx.strokeStyle = 'rgba(190,120,255,0.9)'; ctx.lineWidth = 1;
         ctx.setLineDash([2, 2]);
-        ctx.beginPath(); ctx.arc(c.x, c.y, c.r + 3.5, (now / 400) % TAU, (now / 400) % TAU + TAU); ctx.stroke();
+        ctx.beginPath(); ctx.arc(c.rx, c.ry, c.r + 3.5, (now / 400) % TAU, (now / 400) % TAU + TAU); ctx.stroke();
         ctx.setLineDash([]);
       }
       if (c.ready && z > 1.4) {
         ctx.fillStyle = 'rgba(255,120,200,0.9)';
-        ctx.beginPath(); ctx.arc(c.x, c.y - c.r - 3, 1.3, 0, TAU); ctx.fill();
+        ctx.beginPath(); ctx.arc(c.rx, c.ry - c.r - 3, 1.3, 0, TAU); ctx.fill();
       }
     }
     ctx.globalAlpha = 1;
@@ -281,7 +288,7 @@ export class Renderer {
     if (sel) {
       ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5 / z;
       const pr = sel.r + 5 + Math.sin(now / 200) * 1.5;
-      ctx.beginPath(); ctx.arc(sel.x, sel.y, pr, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.arc(sel.rx, sel.ry, pr, 0, TAU); ctx.stroke();
     } else if (this.selected && this.selected.g && this.selected.g.maxE !== undefined && !this.selected.dead) {
       const p = this.selected;
       ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.2 / z;
@@ -289,7 +296,7 @@ export class Renderer {
     }
     if (this.hover && this.hover !== sel) {
       ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1 / z;
-      ctx.beginPath(); ctx.arc(this.hover.x, this.hover.y, this.hover.r + 3, 0, TAU); ctx.stroke();
+      ctx.beginPath(); ctx.arc(this.hover.rx, this.hover.ry, this.hover.r + 3, 0, TAU); ctx.stroke();
     }
 
     // efekty

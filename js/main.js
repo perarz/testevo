@@ -7,6 +7,7 @@ import { UI, TOOLS, downloadJSON } from './ui.js';
 const $ = s => document.querySelector(s);
 
 const SPEEDS = [
+  { label: 'x0.1', n: 0.1 }, { label: 'x0.25', n: 0.25 }, { label: 'x0.5', n: 0.5 },
   { label: 'x1', n: 1 }, { label: 'x2', n: 2 }, { label: 'x5', n: 5 },
   { label: 'x20', n: 20 }, { label: 'x100', n: 100 }, { label: 'MAX', n: Infinity },
 ];
@@ -59,7 +60,7 @@ function setSpeed(i) {
   [...seg.children].forEach((b, k) => b.classList.toggle('active', k === i));
 }
 seg.onclick = e => { const b = e.target.closest('button'); if (b) setSpeed(Number(b.dataset.i)); };
-setSpeed(0);
+setSpeed(2); // domyślnie x0.5, żeby dało się śledzić, co się dzieje
 
 function setRunning(v) {
   app.running = v;
@@ -229,7 +230,11 @@ function loop(now) {
   } else if (app.running) {
     const t0 = performance.now();
     const budget = app.speed === Infinity ? 30 : 22;
-    for (let i = 0; i < app.speed; i++) {
+    // ułamkowe prędkości: krok symulacji co kilka klatek
+    app.tickAcc = Math.min((app.tickAcc || 0) + app.speed, 1e9);
+    const n = app.speed === Infinity ? Infinity : Math.floor(app.tickAcc);
+    app.tickAcc -= n === Infinity ? app.tickAcc : n;
+    for (let i = 0; i < n; i++) {
       sim.step(); tpsCount++;
       if ((i & 3) === 3 && performance.now() - t0 > budget) break;
     }
@@ -242,6 +247,7 @@ function loop(now) {
     r.cam.x += (app.selected.x - r.cam.x) * 0.15;
     r.cam.y += (app.selected.y - r.cam.y) * 0.15;
   }
+  app.renderer.alpha = app.running && !app.ff && app.speed < 1 ? app.tickAcc : 1;
   if (!app.ff || frame % 8 === 0) app.renderer.draw(sim);
   app.ui.update(now, tps);
   requestAnimationFrame(loop);
