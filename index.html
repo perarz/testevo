@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>EwoSym — symulator ewolucji</title>
+  <meta name="description" content="Symulator ewolucji przez dobór naturalny: stworki z sieciami neuronowymi, mutacje, gatunki, klimat i katastrofy.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='9' fill='%234fd1c5'/><circle cx='16' cy='16' r='14' fill='none' stroke='%234fd1c5' stroke-opacity='.35' stroke-width='3'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <button class="btn icon mobile-only" id="toggleLeft" title="Panel ustawień">☰</button>
+    <div class="brand"><span class="dot"></span>EwoSym <small class="hide-narrow">symulator ewolucji</small></div>
+    <span class="sep"></span>
+    <button class="btn icon" id="playBtn" title="Pauza / start (spacja)">⏸</button>
+    <button class="btn icon" id="stepBtn" title="Jeden krok">⏭</button>
+    <div class="seg" id="speedSeg" title="Prędkość symulacji"></div>
+    <select id="ffSelect" title="Przewiń ewolucję do przodu bez rysowania">
+      <option value="">⏩ Przewiń…</option>
+      <option value="1">o 1 rok</option>
+      <option value="5">o 5 lat</option>
+      <option value="10">o 10 lat</option>
+      <option value="25">o 25 lat</option>
+      <option value="50">o 50 lat</option>
+      <option value="100">o 100 lat</option>
+    </select>
+    <span class="sep"></span>
+    <div class="stat"><b id="sYear">0.00</b><span>rok</span></div>
+    <div class="stat"><b id="sSeason">Wiosna</b><span id="sTempL">pora roku</span></div>
+    <div class="stat"><b id="sPop">0</b><span>stworki</span></div>
+    <div class="stat"><b id="sPlants">0</b><span>rośliny</span></div>
+    <div class="stat"><b id="sSpecies">0</b><span>gatunki</span></div>
+    <div class="stat hide-narrow"><b id="sGen">0</b><span>maks. pokolenie</span></div>
+    <div class="stat hide-narrow"><b id="sTps">0</b><span>ticki/s</span></div>
+    <span class="spacer"></span>
+    <button class="btn" id="saveBtn" title="Zapisz świat do pliku">💾 <span class="hide-narrow">Zapisz</span></button>
+    <button class="btn" id="loadBtn" title="Wczytaj świat z pliku">📂 <span class="hide-narrow">Wczytaj</span></button>
+    <button class="btn primary" id="newBtn">✦ <span class="hide-narrow">Nowy świat</span></button>
+    <button class="btn icon" id="helpBtn" title="Jak to działa?">?</button>
+    <button class="btn icon mobile-only" id="toggleRight" title="Statystyki">📈</button>
+    <input type="file" id="fileInput" accept=".json,application/json" hidden>
+    <input type="file" id="genomeInput" accept=".json,application/json" hidden>
+  </header>
+
+  <aside id="left" class="panel">
+    <nav class="tabs" data-tabs="left">
+      <button data-tab="params" class="active">Parametry</button>
+      <button data-tab="tools">Narzędzia</button>
+      <button data-tab="disasters">Katastrofy</button>
+      <button data-tab="creator">Kreator</button>
+    </nav>
+    <div class="tab-body">
+      <div class="tab-page active" data-page="params">
+        <p class="note">Wszystko można zmieniać w trakcie symulacji. Najedź na nazwę parametru, żeby zobaczyć opis.</p>
+        <div id="paramGroups"></div>
+        <div class="row-flex" style="margin-top:8px">
+          <button class="btn small" id="resetParams">Przywróć domyślne</button>
+        </div>
+      </div>
+      <div class="tab-page" data-page="tools">
+        <h3>Narzędzie (kliknij na mapie)</h3>
+        <div class="tool-grid" id="toolGrid"></div>
+        <div id="toolOptions"></div>
+        <h3>Szybki zapis</h3>
+        <div class="row-flex">
+          <button class="btn small" id="quickSave">Zapisz w przeglądarce</button>
+          <button class="btn small" id="quickLoad">Wczytaj z przeglądarki</button>
+        </div>
+        <h3>Sterowanie</h3>
+        <p class="note">Kółko myszy: zoom. Przeciąganie (prawy przycisk albo lewy na pustym miejscu): przesuwanie mapy. Spacja: pauza. Klawisze 1–8: narzędzia. F: śledź zaznaczonego. Esc: odznacz.</p>
+      </div>
+      <div class="tab-page" data-page="disasters">
+        <p class="note">Katastrofy wywierają nagłą presję selekcyjną. Przetrwają te osobniki, których cechy pasują do nowych warunków.</p>
+        <div id="disasterList"></div>
+        <div id="disasterParams"></div>
+      </div>
+      <div class="tab-page" data-page="creator">
+        <p class="note">Zaprojektuj własnego stworka i wpuść go do świata jako nowy gatunek.</p>
+        <div id="creatorFields"></div>
+        <div class="field">
+          <div class="row"><label>Mózg</label></div>
+          <select id="creatorBrain" style="width:100%">
+            <option value="instinct">Instynkt (sensowne zachowanie na start)</option>
+            <option value="random">Losowy (czysta ewolucja)</option>
+            <option value="selected">Skopiuj z zaznaczonego stworka</option>
+            <option value="imported" disabled>Zaimportowany z pliku</option>
+          </select>
+        </div>
+        <div class="field">
+          <div class="row"><label>Liczba osobników</label><span class="val" id="creatorCountV">8</span></div>
+          <input type="range" id="creatorCount" min="1" max="30" step="1" value="8">
+        </div>
+        <div class="grid2">
+          <button class="btn primary" id="creatorSpawnRandom">Wpuść losowo</button>
+          <button class="btn" id="creatorSpawnClick">Wpuść kliknięciem</button>
+          <button class="btn" id="creatorFromSelected">Wczytaj z zaznaczonego</button>
+          <button class="btn" id="creatorImport">Importuj genom</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <main id="main">
+    <canvas id="world"></canvas>
+    <div class="chips" id="chips"></div>
+    <div class="toast-wrap" id="toasts"></div>
+    <div class="hover-tip" id="hoverTip"></div>
+    <div class="overlay-bar">
+      <label for="colorMode">Kolor</label>
+      <select id="colorMode"></select>
+      <div class="legend-strip" id="colorLegend"></div>
+      <label for="mapMode">Mapa</label>
+      <select id="mapMode">
+        <option value="biome">Biomy</option>
+        <option value="temp">Temperatura</option>
+        <option value="fert">Żyzność</option>
+      </select>
+      <label class="check" style="margin:0"><input type="checkbox" id="showVision"> wzrok</label>
+      <button class="btn small" id="fitBtn" title="Pokaż cały świat">⤢</button>
+    </div>
+    <div id="ffOverlay"><div class="box">
+      <b>Przewijanie ewolucji…</b>
+      <div class="progress"><div id="ffBar"></div></div>
+      <div class="mono dim" id="ffText"></div>
+      <div style="margin-top:12px"><button class="btn" id="ffCancel">Zatrzymaj</button></div>
+    </div></div>
+  </main>
+
+  <aside id="right" class="panel">
+    <nav class="tabs" data-tabs="right">
+      <button data-tab="charts" class="active">Wykresy</button>
+      <button data-tab="species">Gatunki</button>
+      <button data-tab="tree">Drzewo</button>
+      <button data-tab="inspect">Osobnik</button>
+      <button data-tab="log">Kronika</button>
+    </nav>
+    <div class="tab-body">
+      <div class="tab-page active" data-page="charts">
+        <div class="chart-card">
+          <div class="head"><span class="title">Populacja stworków</span></div>
+          <div class="legend">
+            <span><i style="background:var(--herb)"></i>Roślinożercy</span>
+            <span><i style="background:var(--omni)"></i>Wszystkożercy</span>
+            <span><i style="background:var(--carn)"></i>Mięsożercy</span>
+          </div>
+          <canvas id="chartPop" height="150"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="head">
+            <span class="title">Średnia wartość cechy</span>
+            <select id="traitSelect"></select>
+          </div>
+          <div class="legend"><span><i style="background:var(--accent)"></i>średnia</span><span><i style="background:rgba(79,209,197,.25);height:8px"></i>± odchylenie std.</span></div>
+          <canvas id="chartTrait" height="150"></canvas>
+        </div>
+        <div class="chart-card">
+          <div class="head">
+            <span class="title">Rozkład populacji</span>
+            <span class="row-flex"><select id="scatterX"></select><span class="muted">×</span><select id="scatterY"></select></span>
+          </div>
+          <div class="legend"><span>Każda kropka to jeden stworek, kolor to gatunek. Oddzielne chmury to osobne gatunki.</span></div>
+          <canvas id="chartScatter" height="200"></canvas>
+        </div>
+        <div class="grid2">
+          <div class="chart-card">
+            <div class="head"><span class="title">Rośliny</span></div>
+            <canvas id="chartPlants" height="90"></canvas>
+          </div>
+          <div class="chart-card">
+            <div class="head"><span class="title">Liczba gatunków</span></div>
+            <canvas id="chartSpecies" height="90"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="tab-page" data-page="species">
+        <label class="check"><input type="checkbox" id="showExtinct"> pokaż wymarłe gatunki</label>
+        <p class="note">Kliknij gatunek, żeby podświetlić go na mapie.</p>
+        <div class="sp-list" id="speciesList"></div>
+      </div>
+      <div class="tab-page" data-page="tree">
+        <div class="row-flex" style="justify-content:space-between">
+          <span class="note" style="margin:0">Drzewo filogenetyczne: linie to gatunki w czasie</span>
+          <label class="check" style="margin:0">min. osobników <select id="treeMin"><option>1</option><option selected>3</option><option>5</option><option>10</option></select></label>
+        </div>
+        <canvas id="treeCanvas" style="width:100%;display:block;margin-top:6px"></canvas>
+      </div>
+      <div class="tab-page" data-page="inspect">
+        <div id="inspector"><div class="empty">Kliknij stworka albo roślinę na mapie (narzędzie „Wybierz”).</div></div>
+      </div>
+      <div class="tab-page" data-page="log">
+        <h3>Przyczyny śmierci</h3>
+        <canvas id="chartDeaths" height="150" style="width:100%;display:block"></canvas>
+        <h3>Wydarzenia</h3>
+        <div class="log" id="eventLog"></div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<div class="modal-bg" id="newModal">
+  <div class="modal">
+    <h2>Nowy świat</h2>
+    <p class="note">Wybierz gotowy szablon albo ustaw parametry samodzielnie.</p>
+    <div class="presets" id="presets"></div>
+    <div class="grid2" id="worldFields"></div>
+    <div class="foot">
+      <button class="btn" data-close>Anuluj</button>
+      <button class="btn primary" id="createWorld">Stwórz świat</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="helpModal">
+  <div class="modal help">
+    <h2>Jak działa EwoSym?</h2>
+    <h4>Stworki</h4>
+    <p>Każdy stworek ma genom: 10 cech (rozmiar, prędkość, wzrok, dieta, optymalna temperatura, odporność na toksyny, płodność, długość życia, tempo mutacji i neutralną barwę) oraz wagi małej sieci neuronowej, która steruje jego zachowaniem. Sieć widzi najbliższą roślinę, mięso, innego stworka i partnera, zna swoją energię, zdrowie i temperaturę. Decyduje, gdzie skręcić, jak szybko iść, czy atakować i czy szukać partnera.</p>
+    <h4>Kompromisy</h4>
+    <ul>
+      <li>Większe ciało oznacza większy zapas energii, wygrane walki i lepszą odporność na zimno, ale też większe zużycie energii i wolniejsze skręcanie.</li>
+      <li>Koszt ruchu rośnie z kwadratem prędkości.</li>
+      <li>Dalszy wzrok kosztuje energię, a w lesie widać gorzej.</li>
+      <li>Mięsożercy nie trawią roślin, roślinożercy nie trawią mięsa. Wszystkożercy trawią oba pokarmy, ale słabiej.</li>
+      <li>Wysoka płodność daje częste, ale słabe potomstwo.</li>
+    </ul>
+    <h4>Rozmnażanie i mutacje</h4>
+    <p>Rozmnażanie jest płciowe. Dwoje dorosłych, najedzonych osobników tego samego gatunku musi się spotkać i oboje muszą „chcieć”. Potomek dostaje mieszankę genów rodziców, a każdy gen może zmutować: zwykle o trochę, rzadko o dużo.</p>
+    <h4>Gatunki</h4>
+    <p>Gdy potomek za bardzo różni się genetycznie od średniej swojego gatunku, zakłada nowy gatunek. Osobniki zbyt od siebie różne nie mogą mieć wspólnego potomstwa (izolacja rozrodcza). Historię gatunków pokazuje drzewo filogenetyczne.</p>
+    <h4>Rośliny</h4>
+    <p>Rośliny też ewoluują: mogą stać się trujące (wtedy roślinożercy potrzebują odporności), większe, szybciej rosnące albo przystosowane do wody.</p>
+    <h4>Świat</h4>
+    <p>Na północy jest zimno, na południu gorąco. Pory roku zmieniają temperaturę. Katastrofy i suwak klimatu pozwalają zobaczyć, jak populacja adaptuje się do zmian.</p>
+    <div class="foot"><button class="btn primary" data-close>Zamknij</button></div>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
