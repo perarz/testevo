@@ -30,7 +30,8 @@ python3 -m http.server 8000
 - **Kreator stworków**: ustawiasz geny i mózg, a potem wpuszczasz nowy gatunek. Genomy można eksportować i importować jako pliki JSON.
 - **Statystyki**: populacja według diety, średnia i odchylenie dowolnej cechy w czasie, wykres rozrzutu populacji (widać rozdzielanie się gatunków), rośliny, liczba gatunków, przyczyny śmierci i kronika wydarzeń.
 - **Inspektor osobnika**: energia, zdrowie, wiek, potomstwo, geny i podgląd mózgu na żywo.
-- **Prędkość** od x1 do MAX oraz przewijanie ewolucji o 1–100 lat.
+- **Widok 3D** (przycisk „3D” pod mapą albo klawisz V): krajobraz z górami i wodą, stworki jako świecące kule. Lewy przycisk obraca kamerę, prawy przesuwa, kółko przybliża. Wszystkie narzędzia działają też w 3D.
+- **Prędkość** od x0.1 do MAX oraz przewijanie ewolucji o 1–100 lat.
 - **Zapis i odczyt** świata do pliku albo szybki zapis w przeglądarce.
 
 ## Struktura
@@ -44,7 +45,9 @@ js/genome.js      geny, krzyżowanie, mutacje, odległość genetyczna
 js/brain.js       sieć neuronowa i instynkty startowe
 js/species.js     wykrywanie gatunków
 js/terrain.js     generowanie terenu i biomy
-js/render.js      rysowanie świata
+js/render.js      rysowanie świata 2D
+js/render3d.js    widok 3D (Three.js)
+js/vendor/        Three.js r169 (licencja MIT) dołączony do repo, bez CDN
 js/charts.js      wykresy, drzewo filogenetyczne, podgląd mózgu
 js/ui.js          panele boczne
 js/config.js      parametry i ich opisy

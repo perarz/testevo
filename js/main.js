@@ -46,6 +46,7 @@ app.newWorld = opts => {
   app.select(null);
   app.ui.onNewWorld();
   app.renderer.fit();
+  if (app.r3d) app.r3d.fit();
 };
 
 app.ui = new UI(app);
@@ -142,64 +143,106 @@ function applyTool(w, first) {
   }
 }
 
-canvas.addEventListener('contextmenu', e => e.preventDefault());
-canvas.addEventListener('pointerdown', e => {
-  canvas.setPointerCapture(e.pointerId);
-  const w = app.renderer.toWorld(e.offsetX, e.offsetY);
+// Aktywny widok: 2D (canvas) albo 3D (WebGL)
+const is3d = () => app.view === '3d' && app.r3d;
+const toWorld = e => is3d() ? app.r3d.toWorld(e.offsetX, e.offsetY) : app.renderer.toWorld(e.offsetX, e.offsetY);
+const pickCreature = (e, w) => is3d() ? app.r3d.pick(e.offsetX, e.offsetY, app.sim) : app.sim.creatureAt(w.x, w.y, 6 / app.renderer.cam.zoom + 2);
+const BRUSH_TOOLS = ['food', 'meat', 'paint', 'smite', 'infect'];
+
+function onDown(e) {
+  e.currentTarget.setPointerCapture(e.pointerId);
+  const w = toWorld(e);
   drag = { x: e.offsetX, y: e.offsetY, sx: e.offsetX, sy: e.offsetY, button: e.button, moved: false, pan: e.button !== 0 || app.tool === 'select' };
   if (e.button === 0 && app.tool !== 'select') { applyTool(w, true); lastPaint = performance.now(); }
-});
-canvas.addEventListener('pointermove', e => {
+}
+function onMove(e) {
   const r = app.renderer;
-  const w = r.toWorld(e.offsetX, e.offsetY);
+  const w = toWorld(e);
   if (drag) {
     const dx = e.offsetX - drag.x, dy = e.offsetY - drag.y;
     if (Math.abs(e.offsetX - drag.sx) + Math.abs(e.offsetY - drag.sy) > 4) drag.moved = true;
-    if (drag.pan && drag.moved) { r.pan(dx, dy); app.follow = false; }
+    if (drag.pan && drag.moved) { if (!is3d()) r.pan(dx, dy); app.follow = false; }
     else if (!drag.pan && ['food', 'meat', 'paint'].includes(app.tool) && performance.now() - lastPaint > 60) { applyTool(w, false); lastPaint = performance.now(); }
     drag.x = e.offsetX; drag.y = e.offsetY;
   }
   // podgląd pędzla i najechanie
-  r.brush = ['food', 'meat', 'paint', 'smite', 'infect'].includes(app.tool) ? { x: w.x, y: w.y, r: app.toolOpts.radius } : app.tool === 'meteor' ? { x: w.x, y: w.y, r: 130 } : null;
-  const c = app.sim.creatureAt(w.x, w.y, 6 / r.cam.zoom + 2);
+  r.brush = BRUSH_TOOLS.includes(app.tool) ? { x: w.x, y: w.y, r: app.toolOpts.radius } : app.tool === 'meteor' ? { x: w.x, y: w.y, r: 130 } : null;
+  if (drag && drag.pan && drag.moved) { tip.style.display = 'none'; return; }
+  const c = pickCreature(e, w);
   r.hover = c;
+  const mainRect = e.currentTarget.getBoundingClientRect();
   if (c) {
     const sp = app.sim.species.get(c.sp);
     const d = c.g.t.diet;
     tip.innerHTML = `<b style="color:hsl(${sp ? sp.hue : 0},80%,65%)">${sp ? sp.name : '?'}</b> <span class="muted">#${c.id}</span><br>` +
       `${d < 0.33 ? 'roślinożerca' : d < 0.66 ? 'wszystkożerca' : 'mięsożerca'} · energia ${Math.round(c.energy / c.maxE * 100)}% · wiek ${(c.age / app.cfg.yearLength).toFixed(1)} r.`;
     tip.style.display = 'block';
-    const mainRect = canvas.getBoundingClientRect();
     let tx = e.offsetX + 14, ty = e.offsetY + 14;
     if (tx + 240 > mainRect.width) tx = e.offsetX - 250;
     tip.style.left = tx + 'px'; tip.style.top = ty + 'px';
-  } else {
+  } else if (w.x >= 0 && w.y >= 0 && w.x < 1600 && w.y < 1000 && !drag) {
     const b = app.sim.terrain.at(w.x, w.y);
-    if (w.x >= 0 && w.y >= 0 && w.x < 1600 && w.y < 1000 && !drag) {
-      const T = app.sim.terrain.tempAt(w.x, w.y) + app.sim.tempOffset;
-      tip.innerHTML = `${b.name} <span class="muted">· ${T.toFixed(1)}°C</span>`;
-      tip.style.display = 'block';
-      tip.style.left = (e.offsetX + 14) + 'px'; tip.style.top = (e.offsetY + 14) + 'px';
-    } else tip.style.display = 'none';
-  }
-});
-canvas.addEventListener('pointerup', e => {
+    const T = app.sim.terrain.tempAt(w.x, w.y) + app.sim.tempOffset;
+    tip.innerHTML = `${b.name} <span class="muted">· ${T.toFixed(1)}°C</span>`;
+    tip.style.display = 'block';
+    tip.style.left = (e.offsetX + 14) + 'px'; tip.style.top = (e.offsetY + 14) + 'px';
+  } else tip.style.display = 'none';
+}
+function onUp(e) {
   if (drag && !drag.moved && drag.button === 0 && app.tool === 'select') {
-    const w = app.renderer.toWorld(e.offsetX, e.offsetY);
-    const c = app.sim.creatureAt(w.x, w.y, 6 / app.renderer.cam.zoom + 2);
+    const w = toWorld(e);
+    const c = pickCreature(e, w);
     if (c) app.select(c);
-    else {
-      const p = app.sim.plantAt(w.x, w.y);
-      app.select(p || null);
-    }
+    else app.select(app.sim.plantAt(w.x, w.y) || null);
   }
   drag = null;
-});
-canvas.addEventListener('pointerleave', () => { tip.style.display = 'none'; app.renderer.brush = null; app.renderer.hover = null; });
+}
+function onLeave() { tip.style.display = 'none'; app.renderer.brush = null; app.renderer.hover = null; }
+
+const canvas3d = $('#world3d');
+for (const cv of [canvas, canvas3d]) {
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+  cv.addEventListener('pointerdown', onDown);
+  cv.addEventListener('pointermove', onMove);
+  cv.addEventListener('pointerup', onUp);
+  cv.addEventListener('pointerleave', onLeave);
+}
 canvas.addEventListener('wheel', e => {
   e.preventDefault();
   app.renderer.zoomAt(e.offsetX, e.offsetY, Math.exp(-e.deltaY * 0.0015));
 }, { passive: false });
+
+// ---------- Przełączanie 2D / 3D ----------
+app.view = '2d';
+async function setView(v) {
+  if (v === '3d' && !app.r3d) {
+    try {
+      const { Renderer3D } = await import('./render3d.js');
+      canvas3d.hidden = false;
+      app.r3d = new Renderer3D(canvas3d, app.renderer);
+    } catch (err) {
+      console.error(err);
+      canvas3d.hidden = true;
+      app.ui.toast('Nie udało się włączyć widoku 3D (brak WebGL?). ' + err.message);
+      return;
+    }
+  }
+  app.view = v;
+  canvas.hidden = v === '3d';
+  canvas3d.hidden = v !== '3d';
+  $('#viewBtn').textContent = v === '3d' ? '2D' : '3D';
+  $('#viewBtn').title = v === '3d' ? 'Przełącz na płaską mapę (V)' : 'Przełącz na widok 3D (V)';
+  $('#viewHint').hidden = v !== '3d';
+  if (v === '3d') app.r3d.resize(); else app.renderer.resize();
+  syncToolControls();
+}
+// w 3D lewy przycisk obraca kamerę tylko przy narzędziu „Wybierz”; inne narzędzia malują
+function syncToolControls() {
+  if (app.r3d) app.r3d.controls.mouseButtons.LEFT = app.tool === 'select' ? 0 : null;
+}
+$('#viewBtn').onclick = () => setView(app.view === '3d' ? '2d' : '3d');
+const origSetTool = app.ui.setTool.bind(app.ui);
+app.ui.setTool = key => { origSetTool(key); syncToolControls(); };
 
 // ---------- Klawiatura ----------
 window.addEventListener('keydown', e => {
@@ -210,10 +253,12 @@ window.addEventListener('keydown', e => {
   else if (e.key === 'Escape') { app.select(null); app.renderer.highlightSpecies = null; }
   else if (e.key === '+' || e.key === '=') setSpeed(app.speedIdx + 1);
   else if (e.key === '-') setSpeed(app.speedIdx - 1);
+  else if (e.key === 'v' || e.key === 'V') setView(app.view === '3d' ? '2d' : '3d');
 });
 
-window.addEventListener('resize', () => app.renderer.resize());
-new ResizeObserver(() => app.renderer.resize()).observe($('#main'));
+const onResize = () => { app.renderer.resize(); if (app.r3d) app.r3d.resize(); };
+window.addEventListener('resize', onResize);
+new ResizeObserver(onResize).observe($('#main'));
 
 // ---------- Pętla główna ----------
 let tpsCount = 0, tpsTime = performance.now(), tps = 0, frame = 0;
@@ -243,12 +288,18 @@ function loop(now) {
 
   if (app.selected && app.selected.dead && app.follow) app.follow = false;
   if (app.follow && app.selected && !app.selected.dead) {
-    const r = app.renderer;
-    r.cam.x += (app.selected.x - r.cam.x) * 0.15;
-    r.cam.y += (app.selected.y - r.cam.y) * 0.15;
+    if (is3d()) app.r3d.followTarget(app.selected);
+    else {
+      const r = app.renderer;
+      r.cam.x += (app.selected.x - r.cam.x) * 0.15;
+      r.cam.y += (app.selected.y - r.cam.y) * 0.15;
+    }
   }
-  app.renderer.alpha = app.running && !app.ff && app.speed < 1 ? app.tickAcc : 1;
-  if (!app.ff || frame % 8 === 0) app.renderer.draw(sim);
+  const alpha = app.running && !app.ff && app.speed < 1 ? app.tickAcc : 1;
+  if (!app.ff || frame % 8 === 0) {
+    if (is3d()) { app.r3d.alpha = alpha; app.r3d.draw(sim); }
+    else { app.renderer.alpha = alpha; app.renderer.draw(sim); }
+  }
   app.ui.update(now, tps);
   requestAnimationFrame(loop);
 }

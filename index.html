@@ -72,7 +72,7 @@
           <button class="btn small" id="quickLoad">Wczytaj z przeglądarki</button>
         </div>
         <h3>Sterowanie</h3>
-        <p class="note">Kółko myszy: zoom. Przeciąganie (prawy przycisk albo lewy na pustym miejscu): przesuwanie mapy. Spacja: pauza. Klawisze 1–8: narzędzia. F: śledź zaznaczonego. Esc: odznacz.</p>
+        <p class="note">Kółko myszy: zoom. Przeciąganie (prawy przycisk albo lewy na pustym miejscu): przesuwanie mapy. Spacja: pauza. V: widok 2D/3D. Klawisze 1–8: narzędzia. F: śledź zaznaczonego. Esc: odznacz.</p>
       </div>
       <div class="tab-page" data-page="disasters">
         <p class="note">Katastrofy wywierają nagłą presję selekcyjną. Przetrwają te osobniki, których cechy pasują do nowych warunków.</p>
@@ -107,6 +107,8 @@
 
   <main id="main">
     <canvas id="world"></canvas>
+    <canvas id="world3d" hidden></canvas>
+    <div class="view-hint" id="viewHint" hidden>Lewy przycisk: obrót · prawy: przesuwanie · kółko: zoom</div>
     <div class="chips" id="chips"></div>
     <div class="toast-wrap" id="toasts"></div>
     <div class="hover-tip" id="hoverTip"></div>
@@ -122,6 +124,7 @@
       </select>
       <label class="check" style="margin:0"><input type="checkbox" id="showVision"> wzrok</label>
       <button class="btn small" id="fitBtn" title="Pokaż cały świat">⤢</button>
+      <button class="btn small primary" id="viewBtn" title="Przełącz na widok 3D (V)">3D</button>
     </div>
     <div id="ffOverlay"><div class="box">
       <b>Przewijanie ewolucji…</b>
@@ -234,12 +237,15 @@
     <p>Gdy potomek za bardzo różni się genetycznie od średniej swojego gatunku, zakłada nowy gatunek. Osobniki zbyt od siebie różne nie mogą mieć wspólnego potomstwa (izolacja rozrodcza). Historię gatunków pokazuje drzewo filogenetyczne.</p>
     <h4>Rośliny</h4>
     <p>Rośliny też ewoluują: mogą stać się trujące (wtedy roślinożercy potrzebują odporności), większe, szybciej rosnące albo przystosowane do wody.</p>
+    <h4>Widok 3D</h4>
+    <p>Przycisk „3D” pod mapą (albo klawisz V) przełącza na trójwymiarowy krajobraz. Lewy przycisk myszy obraca kamerę, prawy ją przesuwa, a kółko przybliża. Przy innych narzędziach niż „Wybierz” lewy przycisk maluje albo działa narzędziem.</p>
     <h4>Świat</h4>
     <p>Na północy jest zimno, na południu gorąco. Pory roku zmieniają temperaturę. Katastrofy i suwak klimatu pozwalają zobaczyć, jak populacja adaptuje się do zmian.</p>
     <div class="foot"><button class="btn primary" data-close>Zamknij</button></div>
   </div>
 </div>
 
+<script type="importmap">{ "imports": { "three": "./js/vendor/three.module.min.js" } }</script>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

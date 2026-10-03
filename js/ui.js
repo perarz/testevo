@@ -272,7 +272,7 @@ export class UI {
     cm.onchange = () => { r.colorMode = cm.value; this.updateLegend(); };
     $('#mapMode').onchange = e => { r.mapMode = e.target.value; };
     $('#showVision').onchange = e => { r.showVision = e.target.checked; };
-    $('#fitBtn').onclick = () => r.fit();
+    $('#fitBtn').onclick = () => { r.fit(); if (this.app.r3d) this.app.r3d.fit(); };
     this.updateLegend();
   }
   updateLegend() {

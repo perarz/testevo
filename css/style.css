@@ -214,7 +214,10 @@ p.note { color: var(--text-2); font-size: 12px; margin: 6px 0; }
 .disaster .txt span { color: var(--muted); font-size: 11.5px; }
 
 /* ---------- Canvas / overlay ---------- */
-#world { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
+#world, #world3d { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
+#world[hidden], #world3d[hidden] { display: none; }
+.view-hint { position: absolute; left: 50%; transform: translateX(-50%); bottom: 58px; font-size: 11.5px; color: var(--text-2); background: rgba(10, 14, 20, .7); padding: 3px 10px; border-radius: 999px; pointer-events: none; }
+.view-hint[hidden] { display: none; }
 .overlay-bar {
   position: absolute;
   left: 10px;
