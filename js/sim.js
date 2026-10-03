@@ -1,10 +1,10 @@
 // Rdzeń symulacji. Nie korzysta z DOM, więc da się go uruchomić także w Node.
 import { clamp, rand, gauss, chance, pick, angleDiff, Grid, TAU } from './util.js';
 import { Terrain, BIOMES } from './terrain.js';
-import { think, NI, NH, NO } from './brain.js';
+import { think, NI, NH, NO, IN } from './brain.js';
 import {
   TRAITS, PLANT_TRAITS, makeGenome, randomizeTraits, defaultTraits, crossover, cloneGenome, mutate,
-  toVec, distVec, serializeGenome, deserializeGenome,
+  toVec, distVec, serializeGenome, deserializeGenome, hueDist,
   defaultPlantGenome, mutatePlant, randomPlantGenome,
 } from './genome.js';
 import { SpeciesTracker } from './species.js';
@@ -71,7 +71,7 @@ export class Sim {
       if (carn) t.diet = clamp(t.diet, 0.7, 1);
       const g = makeGenome(t, this.opts.brain);
       const pos = this.terrain.randomPassable(b => !b.water);
-      this.spawnCreature(g, pos.x, pos.y, { energy: 0.7, founder: true });
+      this.spawnCreature(g, pos.x, pos.y, { energy: 0.7, founder: true, sex: i % 2 });
     }
     this.log(`Nowy świat (ziarno ${this.opts.seed}). Startowa populacja: ${n} stworków.`, 'info');
   }
@@ -92,10 +92,13 @@ export class Sim {
     this.genePool = [];
     this.deaths = Object.fromEntries(Object.keys(DEATH_CAUSES).map(k => [k, 0]));
     this.births = 0;
+    this.rejections = 0;
     this.maxGen = 0;
     this.fx = [];
     this.tempOffset = 0;
     this.fertMul = 1;
+    // składniki odżywcze w glebie (1 = normalnie); użyźniają je odchody i rozkładające się ciała
+    this.nutr = new Float32Array(this.terrain.cols * this.terrain.rows).fill(1);
     this.creatureGrid = new Grid(WORLD_W, WORLD_H, 60);
     this.plantGrid = new Grid(WORLD_W, WORLD_H, 40);
     this.meatGrid = new Grid(WORLD_W, WORLD_H, 60);
@@ -185,7 +188,6 @@ export class Sim {
   // ---------- Tworzenie obiektów ----------
   spawnCreature(g, x, y, o = {}) {
     const t = g.t;
-    const m = (t.size / 6) ** 2;
     const vec = toVec(g);
     const parentSp = o.parents ? o.parents.map(id => this.species.get(id)) : null;
     let sp;
@@ -205,18 +207,19 @@ export class Sim {
     }
     sp.total++;
     sp.count++;
-    const maxE = 100 * m;
     const c = {
       id: this.nextId++, x, y, angle: rand(0, TAU),
-      g, vec, m, r: t.size, maxE, maxHp: 50 * m,
-      energy: maxE * (o.energy ?? 0.6), hp: 50 * m,
-      age: 0, ageVar: rand(0.85, 1.15), cooldown: 0, gen: o.gen || 0,
+      g, vec, gf: o.gf ?? 1, gf0: o.gf ?? 1, sex: o.sex ?? (chance(0.5) ? 1 : 0),
+      age: o.gf !== undefined && o.gf < 1 ? 0 : Math.floor(this.cfg.maturity * t.lifespan * this.cfg.yearLength * (o.founder ? rand(0.5, 2) : 1)),
+      ageVar: 1, cooldown: 0, gen: o.gen || 0,
       sp: sp.id, parents: o.parentIds || [], children: 0, kills: 0, born: this.tick,
       eatenPlant: 0, eatenMeat: 0,
       inp: new Float32Array(NI), hidden: new Float32Array(NH), out: new Float32Array(NO),
-      mem: 0, infected: 0, immune: 0, speedNow: 0, ready: false, dead: false, cause: null,
+      mem: 0, mem2: 0, stam: 1, infected: 0, immune: 0, speedNow: 0, ready: false, dead: false, cause: null,
       localT: 0, stress: 0, attacking: 0,
     };
+    this.setBody(c);
+    c.energy = c.maxE * (o.energy ?? 0.6);
     if (c.gen > this.maxGen) this.maxGen = c.gen;
     if (o.direct) this.creatures.push(c); else this.newborn.push(c);
     return c;
@@ -281,73 +284,97 @@ export class Sim {
     if (this.tick % this.historyEvery === 0) this.recordHistory();
   }
 
+  // Ciało rośnie od urodzenia do dojrzałości; masa, zapas energii i zdrowie zależą od bieżącego rozmiaru.
+  setBody(c) {
+    const t = c.g.t;
+    const oldHp = c.maxHp || 1;
+    c.r = t.size * c.gf;
+    c.m = (c.r / 6) ** 2;
+    c.maxE = 100 * c.m;
+    c.maxHp = 50 * c.m;
+    c.hp = c.hp === undefined ? c.maxHp : c.hp * c.maxHp / oldHp;
+    if (c.energy > c.maxE) c.energy = c.maxE;
+  }
+
   updateCreature(c) {
-    const cfg = this.cfg, T = this.terrain, t = c.g.t;
+    const cfg = this.cfg, T = this.terrain, t = c.g.t, yl = cfg.yearLength;
     c.px = c.x; c.py = c.y;
     c.age++;
     if (c.cooldown > 0) c.cooldown--;
-    const biome = T.at(c.x, c.y);
+    const matureTicks = cfg.maturity * t.lifespan * yl;
+    const mature = c.age > matureTicks;
+    if (c.gf < 1 && c.age % 15 === 0) { c.gf = Math.min(1, c.gf0 + (1 - c.gf0) * c.age / matureTicks); this.setBody(c); }
+    const ageFrac = c.age / (t.lifespan * yl);
+    const ci = T.idx(c.x, c.y);
+    const biome = BIOMES[T.biome[ci]];
     const localT = T.tempAt(c.x, c.y) + this.tempOffset;
     c.localT = localT;
 
     // --- Zmysły ---
-    const vis = t.vision * biome.vision;
+    // Szerokie pole widzenia skraca zasięg (kompromis: ofiary widzą dookoła, drapieżniki daleko przed sobą).
+    const halfFov = t.fov / 360 * Math.PI;
+    const vis = t.vision * biome.vision * (1.3 - 0.5 * t.fov / 360);
     const vis2 = vis * vis;
-    let bp = null, bpd = vis2, bm = null, bmd = vis2, bc = null, bcd = vis2, bmate = null, bmated = vis2;
-    const cx = c.x, cy = c.y;
+    const cx = c.x, cy = c.y, ang = c.angle;
+    const seen = (ox, oy, d2, extra) => {
+      if (d2 < (c.r + extra + 10) ** 2) return true; // dotyk / bardzo blisko — zawsze
+      return Math.abs(angleDiff(Math.atan2(oy - cy, ox - cx) - ang)) <= halfFov;
+    };
+    let bp = null, bpd = vis2, bm = null, bmd = vis2;
     this.plantGrid.query(cx, cy, vis, p => {
       if (p.dead || p.energy < 2) return;
       const d = (p.x - cx) ** 2 + (p.y - cy) ** 2;
-      if (d < bpd) { bpd = d; bp = p; }
+      if (d < bpd && seen(p.x, p.y, d, 0)) { bpd = d; bp = p; }
     });
     this.meatGrid.query(cx, cy, vis, m => {
       if (m.energy <= 0) return;
       const d = (m.x - cx) ** 2 + (m.y - cy) ** 2;
-      if (d < bmd) { bmd = d; bm = m; }
+      if (d < bmd && seen(m.x, m.y, d, 0)) { bmd = d; bm = m; }
     });
-    // partnera słychać z 2x większej odległości niż widać („nawoływanie godowe”)
-    const hear = vis * 2;
+    // Partnera słychać z 3x większej odległości („nawoływanie godowe”) i niezależnie od kierunku.
+    const hear = vis * 3;
     const mateThr = cfg.mateThreshold;
-    bmated = hear * hear;
+    let bmate = null, bmated = hear * hear;
+    let bthreat = null, btd = Infinity, bprey = null, bpyd = Infinity, bnear = null, bnd = Infinity;
+    let hx = 0, hy = 0, hn = 0;
+    const iAmPredator = t.diet > 0.3;
     this.creatureGrid.query(cx, cy, hear, o => {
       if (o === c || o.dead) return;
-      const d = (o.x - cx) ** 2 + (o.y - cy) ** 2;
-      if (o.sp === c.sp) {
-        if (o.ready && d < bmated) { bmated = d; bmate = o; }
-      } else {
-        if (d < bcd) { bcd = d; bc = o; }
-        // blisko spokrewniony osobnik z innego gatunku też może być partnerem
-        if (o.ready && c.ready && d < bmated && distVec(c.vec, o.vec) < mateThr) { bmated = d; bmate = o; }
-      }
+      const dx = o.x - cx, dy = o.y - cy, d = dx * dx + dy * dy;
+      const kin = o.sp === c.sp;
+      if (d < bnd) { bnd = d; bnear = o; }
+      if (o.ready && c.ready && o.sex !== c.sex && d < bmated && (kin || distVec(c.vec, o.vec) < mateThr)) { bmated = d; bmate = o; }
+      // kamuflaż: stworek w kolorze otoczenia jest widoczny z mniejszej odległości
+      const ob = T.at(o.x, o.y);
+      const camo = 0.6 + 0.4 * hueDist(o.g.t.hue, ob.hue) / 180;
+      if (d > vis2 * camo * camo || !seen(o.x, o.y, d, o.r)) return;
+      if (kin) { hx += dx; hy += dy; hn++; return; }
+      const od = o.g.t.diet;
+      if (od > 0.45 && o.r > c.r * 0.6 && od > t.diet - 0.2 && d < btd) { btd = d; bthreat = o; }
+      if (iAmPredator && o.r < c.r * 1.4 && d < bpyd) { bpyd = d; bprey = o; }
     });
-    // jeśli nie ma obcych w pobliżu, „innym stworkiem” jest najbliższy z własnego gatunku
-    if (!bc) {
-      this.creatureGrid.query(cx, cy, vis, o => {
-        if (o === c || o.dead) return;
-        const d = (o.x - cx) ** 2 + (o.y - cy) ** 2;
-        if (d < bcd) { bcd = d; bc = o; }
-      });
-    }
 
     const inp = c.inp;
-    const rel = o => angleDiff(Math.atan2(o.y - cy, o.x - cx) - c.angle) / Math.PI;
-    inp[0] = c.energy / c.maxE * 2 - 1;
-    inp[1] = c.hp / c.maxHp * 2 - 1;
-    if (bp) { inp[2] = rel(bp); inp[3] = 1 - Math.sqrt(bpd) / vis; } else { inp[2] = 0; inp[3] = 0; }
-    if (bm) { inp[4] = rel(bm); inp[5] = 1 - Math.sqrt(bmd) / vis; } else { inp[4] = 0; inp[5] = 0; }
-    if (bc) {
-      inp[6] = rel(bc); inp[7] = 1 - Math.sqrt(bcd) / vis;
-      inp[8] = clamp(bc.r / c.r - 1, -1, 1); inp[9] = bc.g.t.diet * 2 - 1;
-    } else { inp[6] = 0; inp[7] = 0; inp[8] = 0; inp[9] = 0; }
-    if (bmate) { inp[10] = rel(bmate); inp[11] = 1 - Math.sqrt(bmated) / hear; } else { inp[10] = 0; inp[11] = 0; }
-    inp[12] = clamp((localT - t.tempOpt) / 20, -1, 1);
-    const ax = cx + Math.cos(c.angle) * (c.r + 14), ay = cy + Math.sin(c.angle) * (c.r + 14);
-    inp[13] = T.passable(ax, ay) ? 1 - T.at(ax, ay).move : 1;
-    inp[14] = c.ready ? 1 : 0;
-    inp[15] = c.mem;
-    inp[16] = Math.sin(c.age * 0.05);
-    inp[17] = bc ? (bc.sp === c.sp ? 1 : -1) : 0;
-    inp[18] = 1;
+    const rel = (x, y) => angleDiff(Math.atan2(y - cy, x - cx) - ang) / Math.PI;
+    const near = (d2, range) => 1 - Math.sqrt(d2) / range;
+    inp[IN.energy] = c.energy / c.maxE * 2 - 1;
+    inp[IN.hp] = c.hp / c.maxHp * 2 - 1;
+    inp[IN.age] = clamp(ageFrac, 0, 1) * 2 - 1;
+    if (bp) { inp[IN.plantA] = rel(bp.x, bp.y); inp[IN.plantD] = near(bpd, vis); } else { inp[IN.plantA] = 0; inp[IN.plantD] = 0; }
+    if (bm) { inp[IN.meatA] = rel(bm.x, bm.y); inp[IN.meatD] = near(bmd, vis); } else { inp[IN.meatA] = 0; inp[IN.meatD] = 0; }
+    if (bthreat) { inp[IN.threatA] = rel(bthreat.x, bthreat.y); inp[IN.threatD] = Math.max(0, near(btd, vis)); } else { inp[IN.threatA] = 0; inp[IN.threatD] = 0; }
+    if (bprey) { inp[IN.preyA] = rel(bprey.x, bprey.y); inp[IN.preyD] = Math.max(0, near(bpyd, vis)); } else { inp[IN.preyA] = 0; inp[IN.preyD] = 0; }
+    if (hn) { inp[IN.herdA] = rel(cx + hx / hn, cy + hy / hn); inp[IN.herdN] = Math.min(1, hn / 6); } else { inp[IN.herdA] = 0; inp[IN.herdN] = 0; }
+    if (bmate) { inp[IN.mateA] = rel(bmate.x, bmate.y); inp[IN.mateD] = near(bmated, hear); } else { inp[IN.mateA] = 0; inp[IN.mateD] = 0; }
+    inp[IN.temp] = clamp((localT - t.tempOpt) / 20, -1, 1);
+    const ax = cx + Math.cos(ang) * (c.r + 14), ay = cy + Math.sin(ang) * (c.r + 14);
+    inp[IN.terrain] = T.passable(ax, ay) ? 1 - T.at(ax, ay).move : 1;
+    inp[IN.ready] = c.ready ? 1 : 0;
+    inp[IN.stamina] = c.stam * 2 - 1;
+    inp[IN.mem1] = c.mem;
+    inp[IN.mem2] = c.mem2;
+    inp[IN.clock] = Math.sin(c.age * 0.05);
+    inp[IN.bias] = 1;
 
     // --- Myślenie ---
     think(c.g.w, inp, c.hidden, c.out);
@@ -355,9 +382,14 @@ export class Sim {
 
     // --- Ruch ---
     c.angle += out[0] * 0.16 / Math.sqrt(c.m);
-    let spd = Math.max(0, out[1]) * t.speed * biome.move;
+    // Sprint: zryw do 135% prędkości, ale wyczerpuje kondycję, która wraca w czasie spokojnego ruchu.
+    let thrust = Math.max(0, out[1]), sprint = 1;
+    if (thrust > 0.75 && c.stam > 0.05) { sprint = 1.35; c.stam -= 0.012; }
+    else { c.stam = Math.min(1, c.stam + 0.004); if (thrust > 0.75) thrust = 0.75; }
+    let spd = thrust * sprint * t.speed * biome.move;
     if (c.hp < c.maxHp * 0.3) spd *= 0.7;
     if (c.infected) spd *= 0.8;
+    if (ageFrac > 0.7) spd *= Math.max(0.45, 1 - (ageFrac - 0.7) * 1.4); // starość
     if (spd > 0) {
       const nx = cx + Math.cos(c.angle) * spd, ny = cy + Math.sin(c.angle) * spd;
       if (T.passable(nx, ny)) { c.x = nx; c.y = ny; }
@@ -365,6 +397,7 @@ export class Sim {
     }
     c.speedNow = spd;
     c.mem = out[4];
+    c.mem2 = out[5];
 
     // --- Koszty energetyczne ---
     let cost = 0.015 * c.m * cfg.metabolism * (1 + t.toxRes * 0.3 + t.lifespan / 5 * 0.25);
@@ -377,6 +410,8 @@ export class Sim {
     c.stress = stress;
     cost += stress * 0.002 * cfg.tempCost * Math.sqrt(c.m);
     c.energy -= cost;
+    // odchody użyźniają glebę
+    this.nutr[ci] = Math.min(3, this.nutr[ci] + cost * 0.06);
 
     // --- Jedzenie ---
     const plantEff = 1 - t.diet, meatEff = t.diet;
@@ -399,72 +434,82 @@ export class Sim {
     }
     if (c.energy > c.maxE) c.energy = c.maxE;
 
-    // --- Atak ---
+    // --- Atak (na ofiarę, a w obronie — na napastnika) ---
     c.attacking = 0;
-    if (out[3] > 0 && bc && bcd < (c.r + bc.r + 2) ** 2) {
+    let target = null;
+    if (bprey && bpyd < (c.r + bprey.r + 5) ** 2) target = bprey;
+    else if (bthreat && btd < (c.r + bthreat.r + 3) ** 2) target = bthreat;
+    if (out[3] > 0 && target) {
       const power = 2 * cfg.attackPower * c.m * (0.15 + 0.85 * t.diet) * out[3];
-      bc.hp -= power;
+      target.hp -= power;
       c.energy -= 0.02 * c.m * out[3];
       c.attacking = 1;
-      bc.hurt = this.tick;
-      bc.lastAttacker = c.id;
-      bc.lastAttackerDiet = t.diet;
-      if (bc.hp <= 0 && !bc.dead) { c.kills++; this.kill(bc, 'predation'); }
+      target.hurt = this.tick;
+      target.lastAttacker = c.id;
+      target.lastAttackerDiet = t.diet;
+      if (target.hp <= 0 && !target.dead) { c.kills++; this.kill(target, 'predation'); }
     }
 
     // --- Choroba ---
     if (c.immune > 0) c.immune--;
     if (c.infected) {
       c.hp -= 0.025 * c.m * 1.2;
-      if (bc && !bc.infected && bc.immune <= 0 && bcd < (c.r + bc.r + 10) ** 2 && chance(0.02)) bc.infected = 1;
-      if (bmate && !bmate.infected && bmate.immune <= 0 && bmated < (c.r + bmate.r + 10) ** 2 && chance(0.02)) bmate.infected = 1;
-      if (chance(1 / 1500)) { c.infected = 0; c.immune = this.cfg.yearLength; }
+      if (bnear && !bnear.infected && bnear.immune <= 0 && bnd < (c.r + bnear.r + 10) ** 2 && chance(0.02)) bnear.infected = 1;
+      if (chance(1 / 1500)) { c.infected = 0; c.immune = yl; }
       if (c.hp <= 0) { this.kill(c, 'disease'); return; }
-    } else if (c.hp < c.maxHp && c.energy > c.maxE * 0.3) {
+    } else if (c.hp < c.maxHp && c.energy > c.maxE * 0.3 && ageFrac < 0.85) {
       c.hp = Math.min(c.maxHp, c.hp + 0.01 * c.m);
     }
 
-    // --- Rozmnażanie ---
-    const mature = c.age > cfg.maturity * t.lifespan * cfg.yearLength;
-    c.ready = mature && c.cooldown <= 0 && !c.infected && c.energy > c.maxE * (0.62 - 0.3 * t.fertility) && c.hp > c.maxHp * 0.5;
+    // --- Rozmnażanie (dwie płcie; samica ponosi większy koszt i wybiera partnera) ---
+    const female = c.sex === 1;
+    c.ready = mature && c.cooldown <= 0 && !c.infected && ageFrac < 1 &&
+      c.energy > c.maxE * (female ? 0.62 - 0.3 * t.fertility : 0.4) && c.hp > c.maxHp * 0.5;
     if (c.ready && out[2] > 0 && bmate && bmate.ready && bmate.out[2] > 0 && !bmate.dead &&
       bmated < (c.r + bmate.r + 8) ** 2 &&
-      this.creatures.length + this.newborn.length < cfg.maxCreatures &&
-      distVec(c.vec, bmate.vec) < cfg.mateThreshold) {
-      this.mate(c, bmate);
+      this.creatures.length + this.newborn.length < cfg.maxCreatures) {
+      const f = female ? c : bmate, m = female ? bmate : c;
+      const tolerance = 180 * (1 - f.g.t.choosy) + 20;
+      if (hueDist(m.g.t.hue, f.g.t.prefHue) <= tolerance) this.mate(f, m);
+      else { m.cooldown = 90; this.rejections = (this.rejections || 0) + 1; }
     }
 
-    // --- Śmierć ---
+    // --- Śmierć: głód, a z wiekiem coraz większe ryzyko (prawo Gompertza) ---
     if (c.energy <= 0) { this.kill(c, stress > 6 ? 'cold' : 'starvation'); return; }
-    if (c.age > t.lifespan * cfg.yearLength * c.ageVar) this.kill(c, 'age');
+    if (ageFrac > 0.75 && (chance(0.00004 * Math.exp(9 * (ageFrac - 0.75))) || ageFrac > 1.4)) this.kill(c, 'age');
   }
 
-  mate(a, b) {
+  // f — samica, m — samiec
+  mate(f, m) {
     const cfg = this.cfg;
-    const invA = a.maxE * (0.4 - 0.22 * a.g.t.fertility) * cfg.reproCost;
-    const invB = b.maxE * (0.4 - 0.22 * b.g.t.fertility) * cfg.reproCost;
-    a.energy -= invA; b.energy -= invB;
-    const fert = (a.g.t.fertility + b.g.t.fertility) / 2;
-    const kids = chance(fert * 0.45) && this.creatures.length + this.newborn.length + 2 <= cfg.maxCreatures ? 2 : 1;
-    const pool = (invA + invB) * 0.85 / kids;
+    const fert = f.g.t.fertility;
+    const invF = f.maxE * (0.42 - 0.22 * fert) * cfg.reproCost;
+    const invM = m.maxE * 0.08 * cfg.reproCost;
+    f.energy -= invF; m.energy -= invM;
+    const room = cfg.maxCreatures - this.creatures.length - this.newborn.length;
+    let kids = 1 + (chance(fert * 0.5) ? 1 : 0) + (fert > 0.7 && chance(0.35) ? 1 : 0);
+    kids = Math.max(1, Math.min(kids, room));
+    const pool = (invF * 0.85 + invM * 0.5) / kids;
     for (let k = 0; k < kids; k++) {
-      const g = crossover(a.g, b.g, cfg);
-      const childMaxE = 100 * (g.t.size / 6) ** 2;
+      const g = crossover(f.g, m.g, cfg);
+      // strategia K (niska płodność) — większe noworodki
+      const gf0 = 0.35 + 0.3 * (1 - fert);
+      const childMaxE = 100 * (g.t.size * gf0 / 6) ** 2;
       const ang = rand(0, TAU);
-      let x = a.x + Math.cos(ang) * a.r * 1.5, y = a.y + Math.sin(ang) * a.r * 1.5;
-      if (!this.terrain.passable(x, y)) { x = a.x; y = a.y; }
+      let x = f.x + Math.cos(ang) * f.r * 1.5, y = f.y + Math.sin(ang) * f.r * 1.5;
+      if (!this.terrain.passable(x, y)) { x = f.x; y = f.y; }
       const c = this.spawnCreature(g, x, y, {
-        energy: Math.min(1, pool / childMaxE), gen: Math.max(a.gen, b.gen) + 1,
-        parents: [a.sp, b.sp], parentIds: [a.id, b.id],
+        energy: Math.min(1, pool / childMaxE), gen: Math.max(f.gen, m.gen) + 1, gf: gf0,
+        parents: [f.sp, m.sp], parentIds: [f.id, m.id],
       });
-      c.angle = a.angle;
+      c.angle = f.angle;
     }
-    const cd = cfg.yearLength * 0.08 * (1.6 - fert);
-    a.cooldown = cd; b.cooldown = cd;
-    a.children += kids; b.children += kids;
-    a.ready = false; b.ready = false;
+    f.cooldown = cfg.yearLength * 0.1 * (1.6 - fert);
+    m.cooldown = cfg.yearLength * 0.02;
+    f.children += kids; m.children += kids;
+    f.ready = false; m.ready = false;
     this.births += kids;
-    this.addFx('birth', (a.x + b.x) / 2, (a.y + b.y) / 2, { hue: this.species.get(a.sp)?.hue ?? 0 });
+    this.addFx('birth', (f.x + m.x) / 2, (f.y + m.y) / 2, { hue: this.species.get(f.sp)?.hue ?? 0 });
   }
 
   kill(c, cause) {
@@ -475,8 +520,10 @@ export class Sim {
     const sp = this.species.get(c.sp);
     if (sp) sp.count = Math.max(0, sp.count - 1);
     if (cause !== 'meteor') {
-      this.meat.push({ x: c.x, y: c.y, energy: 75 * c.m + Math.max(0, c.energy) * 0.5, age: 0 });
+      this.meat.push({ x: c.x, y: c.y, energy: 100 * c.m + Math.max(0, c.energy) * 0.5, age: 0 });
     }
+    const ni = this.terrain.idx(c.x, c.y);
+    this.nutr[ni] = Math.min(3, this.nutr[ni] + 0.2 * c.m);
     this.addFx('death', c.x, c.y, { r: c.r, cause });
     // pula genów do wsparcia populacji
     const fit = c.children * 3 + c.age / this.cfg.yearLength + c.kills * 0.5;
@@ -522,7 +569,8 @@ export class Sim {
       }
     }
     if (!pos) pos = this.terrain.randomPassable(b => !b.water);
-    this.spawnCreature(g, pos.x, pos.y, { energy: 0.7, parents, gen, direct: true });
+    this.assistSex = 1 - (this.assistSex || 0);
+    this.spawnCreature(g, pos.x, pos.y, { energy: 0.7, parents, gen, direct: true, sex: this.assistSex });
     this.addFx('spawn', pos.x, pos.y, {});
   }
 
@@ -543,11 +591,16 @@ export class Sim {
       const dev = (p.baseT + off - g.tempOpt) / 14;
       const tf = 1 - dev * dev;
       if (tf > 0) {
-        if (p.energy < g.maxE) p.energy = Math.min(g.maxE, p.energy + g.growth * b.fert * fert * hab * tf * (1 - 0.5 * g.tox) * cfg.plantGrowth);
+        if (p.energy < g.maxE) {
+          const nu = this.nutr[p.ci];
+          const grow = g.growth * b.fert * fert * hab * tf * (1 - 0.5 * g.tox) * cfg.plantGrowth * (0.35 + 0.65 * Math.min(nu, 2));
+          p.energy = Math.min(g.maxE, p.energy + grow);
+          this.nutr[p.ci] = Math.max(0, nu - grow * 0.012);
+        }
       } else {
         p.energy += tf * 0.01;
       }
-      if (p.energy < 0.3 || p.age > p.life * lifeTicks) { p.dead = true; continue; }
+      if (p.energy < 0.3 || p.age > p.life * lifeTicks) { p.dead = true; this.nutr[p.ci] = Math.min(3, this.nutr[p.ci] + 0.05 + p.energy * 0.01); continue; }
       // rozsiewanie
       if (p.energy > 0.6 * g.maxE && count < cap && Math.random() < 0.003 * cfg.plantSeedRate) {
         const a = rand(0, TAU), d = rand(6, g.seedRange);
@@ -562,12 +615,19 @@ export class Sim {
       }
     }
     if (count < cap && chance(cfg.plantSpontaneous / 60)) this.spawnRandomPlant(false);
+    // gleba powoli wraca do stanu wyjściowego (wietrzenie skał, wymywanie)
+    if (this.tick % 30 === 0) { const n = this.nutr; for (let i = 0; i < n.length; i++) n[i] += (1 - n[i]) * 0.006; }
   }
 
   updateMeat() {
     const decay = 0.015 * this.cfg.meatDecay;
     let any = false;
-    for (const m of this.meat) { m.energy -= decay; m.age++; if (m.energy <= 0.5) any = true; }
+    const T = this.terrain;
+    for (const m of this.meat) {
+      m.energy -= decay; m.age++;
+      if (m.energy <= 0.5) any = true;
+      if ((m.age & 15) === 0) { const i = T.idx(m.x, m.y); this.nutr[i] = Math.min(3, this.nutr[i] + decay * 16 * 0.02); }
+    }
     if (any) this.meat = this.meat.filter(m => m.energy > 0.5);
     if (this.meat.length > 400) this.meat.splice(0, this.meat.length - 400);
   }
@@ -587,6 +647,15 @@ export class Sim {
     const n = this.creatures.length;
     const rec = { t: this.tick, herb: 0, omni: 0, carn: 0, plants: this.plants.length, species: 0, temp: this.tempOffset, traits: {}, ptraits: {} };
     for (const d of TRAITS) {
+      if (d.circular) {
+        // średnia na kole kolorów (żeby 350° i 10° dawały 0°, a nie 180°)
+        let sx = 0, sy = 0;
+        for (const c of this.creatures) { const a = c.g.t[d.key] * Math.PI / 180; sx += Math.cos(a); sy += Math.sin(a); }
+        const R = n ? Math.hypot(sx, sy) / n : 0;
+        const mean = n ? ((Math.atan2(sy, sx) * 180 / Math.PI) + 360) % 360 : NaN;
+        rec.traits[d.key] = [mean, n ? Math.sqrt(-2 * Math.log(Math.max(R, 1e-6))) * 180 / Math.PI : NaN];
+        continue;
+      }
       let s = 0, s2 = 0;
       for (const c of this.creatures) { const v = c.g.t[d.key]; s += v; s2 += v * v; }
       const mean = n ? s / n : NaN;
@@ -663,7 +732,7 @@ export class Sim {
         this.log(`Wprowadzono nowy gatunek: ${sp.name}.`, 'species');
         spId = sp.id;
       }
-      c = this.spawnCreature(g, px, py, { energy: 0.8, speciesId: spId, direct: true });
+      c = this.spawnCreature(g, px, py, { energy: 0.8, speciesId: spId, direct: true, sex: i % 2 });
       out.push(c);
       this.addFx('spawn', px, py, {});
     }
@@ -675,20 +744,21 @@ export class Sim {
   serialize() {
     const r2 = v => Math.round(v * 100) / 100;
     return {
-      format: 'ewolucja-save', v: 1,
+      format: 'ewolucja-save', v: 2,
       tick: this.tick, nextId: this.nextId, opts: this.opts, cfg: this.cfg,
       terrain: this.terrain.serialize(),
       creatures: this.creatures.map(c => ({
         id: c.id, x: r2(c.x), y: r2(c.y), angle: r2(c.angle), g: serializeGenome(c.g), sp: c.sp, gen: c.gen,
         age: c.age, ageVar: c.ageVar, energy: r2(c.energy), hp: r2(c.hp), cooldown: c.cooldown, children: c.children,
-        kills: c.kills, parents: c.parents, born: c.born, infected: c.infected, immune: c.immune, mem: c.mem,
-        eatenPlant: r2(c.eatenPlant), eatenMeat: r2(c.eatenMeat),
+        kills: c.kills, parents: c.parents, born: c.born, infected: c.infected, immune: c.immune, mem: c.mem, mem2: c.mem2,
+        eatenPlant: r2(c.eatenPlant), eatenMeat: r2(c.eatenMeat), sex: c.sex, gf: r2(c.gf), gf0: r2(c.gf0),
       })),
+      nutr: Array.from(this.nutr, r2),
       plants: this.plants.map(p => ({ x: r2(p.x), y: r2(p.y), g: p.g, energy: r2(p.energy), age: p.age, life: p.life })),
       meat: this.meat.map(m => ({ x: r2(m.x), y: r2(m.y), energy: r2(m.energy), age: m.age })),
       species: this.species.serialize(),
       history: this.history, historyEvery: this.historyEvery,
-      events: this.events, deaths: this.deaths, births: this.births, maxGen: this.maxGen,
+      events: this.events, deaths: this.deaths, births: this.births, maxGen: this.maxGen, rejections: this.rejections || 0,
       disasters: this.disasters,
       genePool: this.genePool.map(e => ({ ...e, g: serializeGenome(e.g) })),
     };
@@ -704,21 +774,27 @@ export class Sim {
     this.species = SpeciesTracker.deserialize(s.species);
     for (const o of s.creatures) {
       const g = deserializeGenome(o.g);
-      const m = (g.t.size / 6) ** 2;
-      this.creatures.push(Object.assign({
-        g, vec: toVec(g), m, r: g.t.size, maxE: 100 * m, maxHp: 50 * m,
+      const c = Object.assign({
+        vec: toVec(g), gf: 1, gf0: 1, sex: chance(0.5) ? 1 : 0, mem2: 0, stam: 1,
         inp: new Float32Array(NI), hidden: new Float32Array(NH), out: new Float32Array(NO),
         speedNow: 0, ready: false, dead: false, cause: null, localT: 0, stress: 0, attacking: 0,
         eatenPlant: 0, eatenMeat: 0,
-      }, o, { g }));
+      }, o, { g });
+      const hp = c.hp, energy = c.energy;
+      delete c.hp;
+      this.setBody(c);
+      c.hp = Math.min(hp, c.maxHp); c.energy = Math.min(energy, c.maxE);
+      this.creatures.push(c);
     }
     this.plants = s.plants.map(p => Object.assign({ id: 0, dead: false, ci: -1, tv: -1 }, p));
+    if (s.nutr && s.nutr.length === this.nutr.length) this.nutr.set(s.nutr);
     this.meat = s.meat;
     this.history = s.history || [];
     this.historyEvery = s.historyEvery || 30;
     this.events = s.events || [];
     this.deaths = Object.assign(this.deaths, s.deaths);
     this.births = s.births || 0;
+    this.rejections = s.rejections || 0;
     this.maxGen = s.maxGen || 0;
     this.disasters = s.disasters || [];
     this.genePool = (s.genePool || []).map(e => ({ ...e, g: deserializeGenome(e.g) }));

@@ -198,6 +198,8 @@
       <div class="tab-page" data-page="log">
         <h3>Przyczyny śmierci</h3>
         <canvas id="chartDeaths" height="150" style="width:100%;display:block"></canvas>
+        <h3>Rozmnażanie</h3>
+        <dl class="kv" id="lifeStats"></dl>
         <h3>Wydarzenia</h3>
         <div class="log" id="eventLog"></div>
       </div>
@@ -221,26 +223,25 @@
 <div class="modal-bg" id="helpModal">
   <div class="modal help">
     <h2>Jak działa EwoSym?</h2>
-    <h4>Stworki</h4>
-    <p>Każdy stworek ma genom: 10 cech (rozmiar, prędkość, wzrok, dieta, optymalna temperatura, odporność na toksyny, płodność, długość życia, tempo mutacji i neutralną barwę) oraz wagi małej sieci neuronowej, która steruje jego zachowaniem. Sieć widzi najbliższą roślinę, mięso, innego stworka i partnera, zna swoją energię, zdrowie i temperaturę. Decyduje, gdzie skręcić, jak szybko iść, czy atakować i czy szukać partnera.</p>
+    <h4>Geny i dziedziczenie</h4>
+    <p>Każdy stworek ma dwa allele każdej cechy, po jednym od matki i od ojca. Cecha widoczna to ich średnia. Potomek dostaje losowo jeden allel od każdego rodzica (prawo Mendla), a pojedyncze allele mogą mutować: zwykle o trochę, rzadko o dużo. Dlatego rodzeństwo się różni, a populacja przechowuje ukrytą zmienność, z której może korzystać selekcja. W inspektorze szare znaczniki na paskach to allele.</p>
+    <h4>Mózg i zmysły</h4>
+    <p>Zachowaniem steruje sieć neuronowa, której wagi są w genach. Stworek widzi najbliższą roślinę, mięso, zagrożenie (drapieżnika), ofiarę i swoje stado. Słyszy partnera z daleka. Zna swoją energię, zdrowie, wiek, kondycję i temperaturę, ma też dwie komórki pamięci. Widzi tylko w swoim polu widzenia: szerokie pole (jak u ofiar) skraca zasięg wzroku, wąskie (jak u drapieżników) pozwala patrzeć daleko, ale tylko przed siebie. Na start mózg może mieć instynkty (jedz, uciekaj, trzymaj się stada, szukaj partnera, odpoczywaj po posiłku), które ewolucja potem zmienia.</p>
     <h4>Kompromisy</h4>
     <ul>
-      <li>Większe ciało oznacza większy zapas energii, wygrane walki i lepszą odporność na zimno, ale też większe zużycie energii i wolniejsze skręcanie.</li>
-      <li>Koszt ruchu rośnie z kwadratem prędkości.</li>
-      <li>Dalszy wzrok kosztuje energię, a w lesie widać gorzej.</li>
-      <li>Mięsożercy nie trawią roślin, roślinożercy nie trawią mięsa. Wszystkożercy trawią oba pokarmy, ale słabiej.</li>
-      <li>Wysoka płodność daje częste, ale słabe potomstwo.</li>
+      <li>Większe ciało: większy zapas energii, wygrane walki i odporność na zimno, ale większe zużycie energii, wolniejsze skręty i dłuższe dorastanie.</li>
+      <li>Ruch kosztuje proporcjonalnie do kwadratu prędkości. Sprint daje +35% prędkości, ale wyczerpuje kondycję.</li>
+      <li>Ubarwienie w kolorze otoczenia to kamuflaż, ale samice wybierają partnerów po kolorze, więc dobór płciowy może ciągnąć w inną stronę.</li>
+      <li>Wysoka płodność: dużo małych młodych (strategia r). Niska: mniej, ale większych (strategia K).</li>
     </ul>
-    <h4>Rozmnażanie i mutacje</h4>
-    <p>Rozmnażanie jest płciowe. Dwoje dorosłych, najedzonych osobników tego samego gatunku musi się spotkać i oboje muszą „chcieć”. Potomek dostaje mieszankę genów rodziców, a każdy gen może zmutować: zwykle o trochę, rzadko o dużo.</p>
+    <h4>Cykl życia</h4>
+    <p>Są dwie płcie. Samica ponosi większy koszt rozrodu i dłużej odpoczywa po porodzie, a do tego wybiera partnera: wybredne samice odrzucają samców o kolorze niezgodnym z ich preferencją. Młode rodzą się małe i rosną do dojrzałości, a do tego czasu są łatwym łupem. Po około 70% życia zaczyna się starzenie: spada prędkość, zdrowie się nie regeneruje, a ryzyko śmierci rośnie wykładniczo (prawo Gompertza).</p>
     <h4>Gatunki</h4>
-    <p>Gdy potomek za bardzo różni się genetycznie od średniej swojego gatunku, zakłada nowy gatunek. Osobniki zbyt od siebie różne nie mogą mieć wspólnego potomstwa (izolacja rozrodcza). Historię gatunków pokazuje drzewo filogenetyczne.</p>
-    <h4>Rośliny</h4>
-    <p>Rośliny też ewoluują: mogą stać się trujące (wtedy roślinożercy potrzebują odporności), większe, szybciej rosnące albo przystosowane do wody.</p>
+    <p>Gdy potomek za bardzo różni się genetycznie od średniej swojego gatunku, zakłada nowy gatunek. Zbyt różne osobniki nie mogą mieć wspólnego potomstwa (izolacja rozrodcza). Nowe gatunki mogą powstać przez izolację geograficzną, różne nisze albo różne preferencje samic.</p>
+    <h4>Ekosystem</h4>
+    <p>Rośliny też ewoluują (toksyny, rozmiar, glony). Gleba ma składniki odżywcze: rośliny je zużywają, a odchody i rozkładające się ciała je oddają. Tam, gdzie żyją zwierzęta, rośliny rosną lepiej (mapa „Żyzność”). Na północy jest zimno, na południu gorąco, pory roku zmieniają temperaturę, a katastrofy nagle zmieniają warunki.</p>
     <h4>Widok 3D</h4>
-    <p>Przycisk „3D” pod mapą (albo klawisz V) przełącza na trójwymiarowy krajobraz. Lewy przycisk myszy obraca kamerę, prawy ją przesuwa, a kółko przybliża. Przy innych narzędziach niż „Wybierz” lewy przycisk maluje albo działa narzędziem.</p>
-    <h4>Świat</h4>
-    <p>Na północy jest zimno, na południu gorąco. Pory roku zmieniają temperaturę. Katastrofy i suwak klimatu pozwalają zobaczyć, jak populacja adaptuje się do zmian.</p>
+    <p>Przycisk „3D” pod mapą (albo klawisz V) przełącza na trójwymiarowy krajobraz. Lewy przycisk myszy obraca kamerę, prawy przesuwa, a kółko przybliża.</p>
     <div class="foot"><button class="btn primary" data-close>Zamknij</button></div>
   </div>
 </div>

@@ -2,16 +2,16 @@
 import { mulberry32, makeNoise, clamp } from './util.js';
 
 export const BIOMES = [
-  { id: 0, name: 'Głęboka woda', color: [11, 29, 51], fert: 0.3, move: 0.35, cost: 0.6, vision: 1, water: true, pass: true },
-  { id: 1, name: 'Płytka woda', color: [18, 52, 79], fert: 0.75, move: 0.6, cost: 0.2, vision: 1, water: true, pass: true },
-  { id: 2, name: 'Plaża', color: [74, 68, 48], fert: 0.3, move: 1, cost: 0, vision: 1, water: false, pass: true },
-  { id: 3, name: 'Pustynia', color: [92, 74, 42], fert: 0.15, move: 0.95, cost: 0, vision: 1.1, water: false, pass: true },
-  { id: 4, name: 'Step', color: [61, 74, 40], fert: 0.6, move: 1, cost: 0, vision: 1.1, water: false, pass: true },
-  { id: 5, name: 'Łąka', color: [36, 69, 42], fert: 1.0, move: 1, cost: 0, vision: 1, water: false, pass: true },
-  { id: 6, name: 'Las', color: [21, 52, 32], fert: 1.3, move: 0.8, cost: 0.05, vision: 0.6, water: false, pass: true },
-  { id: 7, name: 'Tundra', color: [72, 82, 92], fert: 0.35, move: 0.85, cost: 0.05, vision: 1, water: false, pass: true },
-  { id: 8, name: 'Góry', color: [58, 58, 66], fert: 0.25, move: 0.55, cost: 0.15, vision: 1.25, water: false, pass: true },
-  { id: 9, name: 'Skały (ściana)', color: [26, 26, 30], fert: 0, move: 0, cost: 0, vision: 1, water: false, pass: false },
+  { id: 0, name: 'Głęboka woda', hue: 210, color: [11, 29, 51], fert: 0.3, move: 0.35, cost: 0.6, vision: 1, water: true, pass: true },
+  { id: 1, name: 'Płytka woda', hue: 200, color: [18, 52, 79], fert: 0.75, move: 0.6, cost: 0.2, vision: 1, water: true, pass: true },
+  { id: 2, name: 'Plaża', hue: 45, color: [74, 68, 48], fert: 0.3, move: 1, cost: 0, vision: 1, water: false, pass: true },
+  { id: 3, name: 'Pustynia', hue: 38, color: [92, 74, 42], fert: 0.15, move: 0.95, cost: 0, vision: 1.1, water: false, pass: true },
+  { id: 4, name: 'Step', hue: 75, color: [61, 74, 40], fert: 0.6, move: 1, cost: 0, vision: 1.1, water: false, pass: true },
+  { id: 5, name: 'Łąka', hue: 120, color: [36, 69, 42], fert: 1.0, move: 1, cost: 0, vision: 1, water: false, pass: true },
+  { id: 6, name: 'Las', hue: 140, color: [21, 52, 32], fert: 1.3, move: 0.8, cost: 0.05, vision: 0.6, water: false, pass: true },
+  { id: 7, name: 'Tundra', hue: 205, color: [72, 82, 92], fert: 0.35, move: 0.85, cost: 0.05, vision: 1, water: false, pass: true },
+  { id: 8, name: 'Góry', hue: 230, color: [58, 58, 66], fert: 0.25, move: 0.55, cost: 0.15, vision: 1.25, water: false, pass: true },
+  { id: 9, name: 'Skały (ściana)', hue: 0, color: [26, 26, 30], fert: 0, move: 0, cost: 0, vision: 1, water: false, pass: false },
 ];
 
 export const CELL = 20;

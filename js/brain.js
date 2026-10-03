@@ -1,18 +1,25 @@
-// Mała sieć neuronowa: wejścia -> warstwa ukryta (tanh) -> wyjścia (tanh).
-// Wagi są częścią genomu, więc dziedziczą się, krzyżują i mutują.
+// Mała sieć neuronowa: wejścia -> warstwa ukryta (tanh) -> wyjścia (tanh), z dwiema komórkami pamięci
+// (wyjścia wracają jako wejścia w następnym kroku). Wagi są częścią genomu, więc dziedziczą się,
+// krzyżują i mutują.
 import { gauss, chance } from './util.js';
 
 export const INPUTS = [
-  'Energia', 'Zdrowie',
+  'Energia', 'Zdrowie', 'Wiek',
   'Roślina: kierunek', 'Roślina: bliskość',
   'Mięso: kierunek', 'Mięso: bliskość',
-  'Inny stworek: kierunek', 'Inny stworek: bliskość', 'Inny: względny rozmiar', 'Inny: mięsożerność',
+  'Zagrożenie: kierunek', 'Zagrożenie: bliskość',
+  'Ofiara: kierunek', 'Ofiara: bliskość',
+  'Stado: kierunek', 'Stado: liczebność',
   'Partner: kierunek', 'Partner: bliskość',
-  'Temperatura (stres)', 'Teren przed sobą', 'Gotowy do rozmnażania',
-  'Pamięć', 'Zegar wewnętrzny', 'Inny: mój gatunek', 'Stała (bias)',
+  'Temperatura (stres)', 'Teren przed sobą', 'Gotowy do godów', 'Kondycja (sprint)',
+  'Pamięć 1', 'Pamięć 2', 'Zegar wewnętrzny', 'Stała (bias)',
 ];
-export const OUTPUTS = ['Skręt', 'Ruch', 'Chęć godów', 'Atak', 'Pamięć'];
-export const NI = INPUTS.length, NH = 10, NO = OUTPUTS.length;
+export const OUTPUTS = ['Skręt', 'Ruch', 'Chęć godów', 'Atak', 'Pamięć 1', 'Pamięć 2'];
+export const IN = Object.fromEntries([
+  'energy', 'hp', 'age', 'plantA', 'plantD', 'meatA', 'meatD', 'threatA', 'threatD', 'preyA', 'preyD',
+  'herdA', 'herdN', 'mateA', 'mateD', 'temp', 'terrain', 'ready', 'stamina', 'mem1', 'mem2', 'clock', 'bias',
+].map((k, i) => [k, i]));
+export const NI = INPUTS.length, NH = 12, NO = OUTPUTS.length;
 export const W1 = NH * (NI + 1), W2 = NO * (NH + 1);
 export const NW = W1 + W2;
 
@@ -22,35 +29,41 @@ export function randomWeights(scale = 1) {
   return w;
 }
 
-// Mózg z „instynktem” — sensowne zachowanie na start, które ewolucja może zmienić.
+// Mózg z „instynktem” — sensowne zachowanie na start, które ewolucja może wzmocnić, osłabić albo zmienić.
 export function instinctWeights(noise = 0.25, diet = 0.1) {
   const w = randomWeights(noise);
   const s1 = (h, inp, v) => { w[h * (NI + 1) + inp] = v; };
   const s2 = (o, h, v) => { w[W1 + o * (NH + 1) + h] = v; };
-  for (let h = 0; h < 7; h++) for (let i = 0; i <= NI; i++) w[h * (NI + 1) + i] *= 0.3;
-  for (let o = 0; o < NO; o++) for (let h = 0; h < 7; h++) w[W1 + o * (NH + 1) + h] *= 0.3;
-  // h0: skręt w stronę pożywienia (roślinożerca -> rośliny, mięsożerca -> mięso i ofiary)
-  s1(0, 2, 2.4 * (1 - diet));
-  s1(0, 4, 2.4 * diet);
-  s1(0, 6, 1.8 * Math.max(0, diet - 0.3));
-  // h1: skręt w stronę partnera, gdy gotowy
-  s1(1, 10, 2.0);
-  // h2: „idź do przodu”
-  s1(2, 18, 1.5);
-  // h3: gotowość do godów
-  s1(3, 14, 2.5); s1(3, 18, -0.8);
-  s2(0, 0, 1.8); s2(0, 1, 1.6);
-  s2(1, 2, 1.5);
+  // neurony z instynktem mają mniej szumu
+  for (let h = 0; h < 8; h++) for (let i = 0; i <= NI; i++) w[h * (NI + 1) + i] *= 0.3;
+  for (let o = 0; o < NO; o++) for (let h = 0; h < 8; h++) w[W1 + o * (NH + 1) + h] *= 0.3;
+  const herb = 1 - diet, carn = Math.max(0, diet - 0.3);
+  // h0: skręt w stronę pożywienia (rośliny, mięso, ofiara — zależnie od diety)
+  s1(0, IN.plantA, 2.4 * herb);
+  s1(0, IN.meatA, 2.4 * diet);
+  s1(0, IN.preyA, 2.2 * carn);
+  s2(0, 0, 1.8);
+  // h1: skręt w stronę partnera
+  s1(1, IN.mateA, 3.0);
+  s2(0, 1, 2.8);
+  // h2: „idź do przodu” spokojnym tempem
+  s1(2, IN.bias, 1.5); s1(2, IN.energy, -0.4 - 1.4 * diet); // najedzony odpoczywa (zwłaszcza drapieżnik)
+  s2(1, 2, 0.8);
+  // h7: sprint — przy ucieczce przed zagrożeniem albo w pościgu za ofiarą
+  s1(7, IN.threatD, 3 * herb); s1(7, IN.preyD, 3 * carn * 2); s1(7, IN.bias, -0.6);
+  s2(1, 7, 1.6);
+  // h3: chęć godów, gdy gotowy
+  s1(3, IN.ready, 2.5); s1(3, IN.bias, -0.8);
   s2(2, 3, 2.0);
-  s2(3, 2, -1.0);
-  // h5/h6: ucieczka przed mięsożercą (para neuronów „bramkowana” mięsożernością widzianego stworka)
-  const flee = 1 - diet;
-  s1(5, 9, 5); s1(5, 6, 2); s1(5, 18, -3);
-  s1(6, 9, 5); s1(6, 6, -2); s1(6, 18, -3);
-  s2(0, 5, -1.2 * flee); s2(0, 6, 1.2 * flee);
-  // h4: atak, gdy ktoś jest blisko (tylko u mięsożerców)
-  s1(4, 7, 3 * diet); s1(4, 0, -2.5 * diet); s1(4, 9, -1.5 * diet); s1(4, 17, -4 * diet); s1(4, 18, -1.6);
-  s2(3, 4, 2.5 * diet);
+  // h4: atak na bliską ofiarę, tylko gdy głodny (mięsożercy)
+  s1(4, IN.preyD, 3.2 * diet); s1(4, IN.energy, -2.5 * diet); s1(4, IN.bias, -1.6);
+  s2(3, 4, 2.5 * diet); s2(3, 2, -1.0);
+  // h5: ucieczka — skręt od zagrożenia (gdy nic nie grozi, kierunek = 0 i neuron milczy)
+  s1(5, IN.threatA, 2.5);
+  s2(0, 5, -1.6 * herb);
+  // h6: trzymanie się stada (słaby odruch — „samolubne stado”)
+  s1(6, IN.herdA, 2.0);
+  s2(0, 6, 0.5 * herb);
   return w;
 }
 
@@ -70,7 +83,8 @@ export function think(w, inp, hidden, out) {
   }
 }
 
-// Krzyżowanie po neuronach: każdy neuron bierze wszystkie wagi wejściowe od jednego rodzica.
+// Krzyżowanie po neuronach: każdy neuron bierze wszystkie wagi wejściowe od jednego rodzica
+// (geny jednego neuronu są ze sobą „sprzężone”, jak geny leżące blisko na chromosomie).
 export function crossWeights(a, b) {
   const w = new Float32Array(NW);
   for (let h = 0; h < NH; h++) {

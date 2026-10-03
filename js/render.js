@@ -12,12 +12,16 @@ export const COLOR_MODES = [
   { key: 'size', name: 'Rozmiar', trait: true },
   { key: 'speed', name: 'Prędkość', trait: true },
   { key: 'vision', name: 'Wzrok', trait: true },
+  { key: 'fov', name: 'Pole widzenia', trait: true },
   { key: 'tempOpt', name: 'Optymalna temp.', trait: true },
   { key: 'fertility', name: 'Płodność', trait: true },
   { key: 'toxRes', name: 'Odporność na toksyny', trait: true },
   { key: 'lifespan', name: 'Długość życia', trait: true },
   { key: 'mutRate', name: 'Tempo mutacji', trait: true },
-  { key: 'hue', name: 'Barwa (gen neutralny)' },
+  { key: 'choosy', name: 'Wybredność', trait: true },
+  { key: 'hue', name: 'Ubarwienie' },
+  { key: 'sex', name: 'Płeć' },
+  { key: 'age', name: 'Wiek' },
   { key: 'energy', name: 'Energia' },
   { key: 'gen', name: 'Pokolenie' },
 ];
@@ -78,7 +82,7 @@ export class Renderer {
   buildTerrain(sim) {
     const T = sim.terrain;
     const tq = Math.round(sim.tempOffset / 1.5);
-    const key = `${T.version}|${this.mapMode}|${tq}|${this.mapMode === 'fert' ? Math.round(sim.fertMul * 10) : ''}`;
+    const key = `${T.version}|${this.mapMode}|${tq}|${this.mapMode === 'fert' ? Math.round(sim.fertMul * 10) + '|' + Math.floor(sim.tick / 300) : ''}`;
     if (key === this.texKey) return;
     this.texKey = key;
     const W = T.cols * TEX_SCALE, H = T.rows * TEX_SCALE;
@@ -119,7 +123,8 @@ export class Renderer {
           else { const k = (n - 0.5) / 0.5; r = lerp(70, 190, k); g = lerp(72, 60, k); bl = lerp(72, 45, k); }
           if (!b.pass) { r *= 0.4; g *= 0.4; bl *= 0.4; }
         } else if (this.mapMode === 'fert') {
-          const f = clamp(b.fert * sim.fertMul / 1.6, 0, 1);
+          // żyzność biomu × składniki odżywcze w glebie (odchody i rozkładające się ciała)
+          const f = clamp(b.fert * sim.fertMul * (0.35 + 0.65 * Math.min(sim.nutr[ci], 2)) / 1.8, 0, 1);
           r = lerp(22, 40, f); g = lerp(24, 150, f); bl = lerp(28, 70, f);
           if (b.water) { r *= 0.7; g *= 0.8; bl = bl * 0.8 + 40; }
         } else {
@@ -148,6 +153,8 @@ export class Renderer {
       case 'species': { const s = sim.species.get(c.sp); return `hsla(${s ? s.hue : 0},85%,62%,${a})`; }
       case 'diet': return dietColor(t.diet, a);
       case 'hue': return `hsla(${t.hue},85%,62%,${a})`;
+      case 'sex': return c.sex === 1 ? `hsla(330,80%,68%,${a})` : `hsla(205,85%,62%,${a})`;
+      case 'age': return seqColor(c.age / (t.lifespan * sim.cfg.yearLength), a);
       case 'energy': return `hsla(${lerp(0, 130, c.energy / c.maxE)},80%,55%,${a})`;
       case 'gen': return seqColor(sim.maxGen ? c.gen / sim.maxGen : 0, a);
       default: {

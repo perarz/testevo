@@ -1,6 +1,6 @@
 // Panele boczne: parametry, narzędzia, katastrofy, kreator, wykresy, gatunki, drzewo, inspektor, kronika.
 import { DEFAULTS, SCHEMA, GROUPS } from './config.js';
-import { TRAITS, PLANT_TRAITS, TRAIT_MAP, makeGenome, cloneGenome, serializeGenome, deserializeGenome, defaultTraits } from './genome.js';
+import { TRAITS, PLANT_TRAITS, TRAIT_MAP, makeGenome, cloneGenome, serializeGenome, deserializeGenome, defaultTraits, hueDist } from './genome.js';
 import { BIOMES } from './terrain.js';
 import { DISASTERS, DEATH_CAUSES, DEFAULT_WORLD_OPTS, dietClass } from './sim.js';
 import { COLOR_MODES, seqColor, dietColor } from './render.js';
@@ -281,7 +281,9 @@ export class UI {
     const grad = (a, b, c) => `<span class="bar" style="background:linear-gradient(90deg,${a},${b},${c})"></span>`;
     if (m === 'species') el.innerHTML = '<span class="muted">każdy gatunek ma swój kolor</span>';
     else if (m === 'diet') el.innerHTML = `rośl. ${grad(dietColor(0), dietColor(0.5), dietColor(1))} mięso`;
-    else if (m === 'hue') el.innerHTML = '<span class="muted">kolor genu barwy</span>';
+    else if (m === 'hue') el.innerHTML = '<span class="muted">prawdziwy kolor ciała</span>';
+    else if (m === 'sex') el.innerHTML = '<span style="color:hsl(330,80%,68%)">● samice</span> <span style="color:hsl(205,85%,62%)">● samce</span>';
+    else if (m === 'age') el.innerHTML = `młode ${grad(seqColor(0), seqColor(0.5), seqColor(1))} stare`;
     else if (m === 'energy') el.innerHTML = `0 ${grad('hsl(0,80%,55%)', 'hsl(65,80%,55%)', 'hsl(130,80%,55%)')} pełna`;
     else if (m === 'gen') el.innerHTML = `stare ${grad(seqColor(0), seqColor(0.5), seqColor(1))} nowe`;
     else {
@@ -293,7 +295,7 @@ export class UI {
   // ---------- Wykresy ----------
   buildCharts() {
     const ts = $('#traitSelect');
-    ts.innerHTML = '<optgroup label="Stworki">' + TRAITS.filter(d => !d.circular).map(d => `<option value="c:${d.key}">${esc(d.name)}</option>`).join('') + '</optgroup>' +
+    ts.innerHTML = '<optgroup label="Stworki">' + TRAITS.map(d => `<option value="c:${d.key}">${esc(d.name)}${d.circular ? ' (°)' : ''}</option>`).join('') + '</optgroup>' +
       '<optgroup label="Rośliny">' + PLANT_TRAITS.map(d => `<option value="p:${d.key}">${esc(d.name)}</option>`).join('') + '</optgroup>' +
       '<optgroup label="Świat"><option value="w:temp">Odchylenie temperatury</option></optgroup>';
     ts.value = 'c:size';
@@ -446,12 +448,16 @@ export class UI {
     else this.updatePlantInspector(s);
   }
 
-  traitBars(defs, vals) {
+  // Pasek cechy; dla stworków dodatkowo dwa allele (szare znaczniki) — fenotyp to ich średnia.
+  traitBars(defs, vals, alleles) {
+    const P = (d, v) => clamp((v - d.min) / (d.max - d.min), 0, 1) * 100;
     return defs.map(d => {
       const v = vals[d.key];
-      const pos = clamp((v - d.min) / (d.max - d.min), 0, 1) * 100;
-      return `<div class="trait-row" title="${esc(d.desc || '')}"><span>${esc(d.name)}</span><span class="v">${fmtTrait(d, v)}</span>
-        <div class="bar"><div style="left:calc(${pos}% - 1.5px)"></div></div></div>`;
+      const al = alleles && alleles[d.key];
+      const alHtml = al ? al.map(x => `<div class="al" style="left:calc(${P(d, x)}% - 1px)"></div>`).join('') : '';
+      const alTxt = al ? ` · allele: ${fmtTrait(d, al[0])} / ${fmtTrait(d, al[1])}` : '';
+      return `<div class="trait-row" title="${esc((d.desc || '') + alTxt)}"><span>${esc(d.name)}</span><span class="v">${fmtTrait(d, v)}</span>
+        <div class="bar">${alHtml}<div style="left:calc(${P(d, v)}% - 1.5px)"></div></div></div>`;
     }).join('');
   }
 
@@ -459,15 +465,20 @@ export class UI {
     const sim = this.app.sim, yl = sim.cfg.yearLength, t = c.g.t;
     const sp = sim.species.get(c.sp);
     $('#iName').innerHTML = `<span style="color:hsl(${sp ? sp.hue : 0},80%,65%)">●</span> ${esc(sp ? sp.name : '?')}`;
-    $('#iSub').textContent = `${DIET_NAMES[dietClass(t.diet)]} · pokolenie ${c.gen}`;
-    const st = c.dead ? `nie żyje: ${DEATH_CAUSES[c.cause] || c.cause}` : c.infected ? 'chory' : c.attacking ? 'atakuje' : c.ready ? 'szuka partnera' : c.age < sim.cfg.maturity * t.lifespan * yl ? 'młody' : 'dorosły';
+    $('#iSub').textContent = `${c.sex === 1 ? '♀ samica' : '♂ samiec'} · ${DIET_NAMES[dietClass(t.diet)]} · pokolenie ${c.gen}`;
+    const ageFrac = c.age / (t.lifespan * yl);
+    const st = c.dead ? `nie żyje: ${DEATH_CAUSES[c.cause] || c.cause}` : c.infected ? 'chory' : c.attacking ? 'atakuje' : c.ready ? 'szuka partnera' :
+      c.gf < 1 ? 'młody (rośnie)' : ageFrac > 0.75 ? 'stary' : 'dorosły';
     $('#iState').textContent = st;
     $('#iE').textContent = `${Math.max(0, c.energy).toFixed(0)} / ${c.maxE.toFixed(0)}`;
     $('#iEbar').style.width = clamp(c.energy / c.maxE * 100, 0, 100) + '%';
     $('#iH').textContent = `${Math.max(0, c.hp).toFixed(0)} / ${c.maxHp.toFixed(0)}`;
     $('#iHbar').style.width = clamp(c.hp / c.maxHp * 100, 0, 100) + '%';
     $('#iKv').innerHTML = [
-      ['Wiek', `${(c.age / yl).toFixed(2)} / ${(t.lifespan * c.ageVar).toFixed(2)} lat`],
+      ['Wiek', `${(c.age / yl).toFixed(2)} lat (starzenie od ${(t.lifespan * 0.7).toFixed(2)})`],
+      ['Rozmiar teraz / docelowy', `${c.r.toFixed(1)} / ${t.size.toFixed(1)}`],
+      ['Kondycja (sprint)', `${Math.round(c.stam * 100)}%`],
+      ['Kamuflaż w tym miejscu', `${Math.round((1 - hueDist(t.hue, sim.terrain.at(c.x, c.y).hue) / 180) * 100)}%`],
       ['Dzieci', c.children], ['Zabójstwa', c.kills],
       ['Zjedzone rośliny', c.eatenPlant.toFixed(0)], ['Zjedzone mięso', c.eatenMeat.toFixed(0)],
       ['Temperatura tu / optymalna', `${c.localT.toFixed(1)} / ${t.tempOpt.toFixed(1)}°C`],
@@ -475,7 +486,7 @@ export class UI {
       ['Rodzice', c.parents.length ? c.parents.map(p => '#' + p).join(', ') : '—'],
     ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
     $('#iFollow').textContent = this.app.follow ? 'Nie śledź' : 'Śledź';
-    $('#iTraits').innerHTML = this.traitBars(TRAITS, t);
+    $('#iTraits').innerHTML = this.traitBars(TRAITS, t, c.g.a);
     brainChart($('#iBrain'), c);
   }
   updatePlantInspector(p) {
@@ -490,6 +501,9 @@ export class UI {
   drawLog() {
     const sim = this.app.sim, yl = sim.cfg.yearLength;
     barChart($('#chartDeaths'), Object.entries(DEATH_CAUSES).map(([k, label]) => ({ label, value: sim.deaths[k] || 0, color: '#4fd1c5' })));
+    $('#lifeStats').innerHTML = `<dt>Narodziny</dt><dd>${sim.births}</dd><dt>Zaloty odrzucone przez samice</dt><dd>${sim.rejections || 0}</dd>` +
+      `<dt>Samice / samce teraz</dt><dd>${sim.creatures.filter(c => c.sex === 1).length} / ${sim.creatures.filter(c => c.sex !== 1).length}</dd>` +
+      `<dt>Młode (rosnące)</dt><dd>${sim.creatures.filter(c => c.gf < 1).length}</dd>`;
     $('#eventLog').innerHTML = sim.events.slice().reverse().map(e => `<div class="${e.kind}"><time>r. ${(e.tick / yl).toFixed(2)}</time>${esc(e.text)}</div>`).join('');
   }
 

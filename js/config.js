@@ -12,7 +12,7 @@ export const DEFAULTS = {
   climateOffset: 0,
   fertility: 1,
   randomDisasters: true,
-  disasterRate: 0.4,
+  disasterRate: 0.2,
 
   // Rośliny
   maxPlants: 650,

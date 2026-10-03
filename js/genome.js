@@ -1,18 +1,23 @@
-// Geny stworków i roślin: definicje, krzyżowanie, mutacje, odległość genetyczna.
+// Geny stworków i roślin. Stworki są diploidalne: każda cecha ma dwa allele (po jednym od każdego
+// rodzica), a cecha widoczna (fenotyp, g.t) to ich średnia. Dzięki temu — jak w prawdziwym życiu —
+// potomstwo jest zmienne, a populacja przechowuje „ukrytą” zmienność genetyczną.
 import { clamp, gauss, chance, rand } from './util.js';
 import { NW, randomWeights, instinctWeights, crossWeights, mutateWeights } from './brain.js';
 
 export const TRAITS = [
-  { key: 'size', name: 'Rozmiar', min: 3, max: 14, def: 6, fmt: 1, desc: 'Większy: więcej energii w zapasie, wygrywa walki, lepiej znosi zimno. Ale więcej je i wolniej skręca.' },
+  { key: 'size', name: 'Rozmiar', min: 3, max: 14, def: 6, fmt: 1, desc: 'Większy: więcej energii w zapasie, wygrywa walki, lepiej znosi zimno. Ale więcej je, wolniej skręca i dłużej dorasta.' },
   { key: 'speed', name: 'Prędkość', min: 0.4, max: 2.8, def: 1.3, fmt: 2, desc: 'Maksymalna prędkość. Ruch kosztuje energię proporcjonalnie do kwadratu prędkości.' },
   { key: 'vision', name: 'Zasięg wzroku', min: 25, max: 220, def: 90, fmt: 0, desc: 'Jak daleko stworek widzi. Dalszy wzrok kosztuje energię.' },
+  { key: 'fov', name: 'Pole widzenia', min: 60, max: 360, def: 220, fmt: 0, unit: '°', desc: 'Szerokie pole (jak u ofiar) pozwala zauważyć drapieżnika z boku, ale skraca zasięg. Wąskie (jak u drapieżników) — daleko, ale tylko przed sobą.' },
   { key: 'diet', name: 'Mięsożerność', min: 0, max: 1, def: 0.1, fmt: 2, desc: '0 = czysty roślinożerca, 1 = czysty mięsożerca. Wszystkożercy trawią oba pokarmy, ale słabiej.' },
   { key: 'tempOpt', name: 'Optymalna temp.', min: -15, max: 45, def: 16, fmt: 1, unit: '°C', desc: 'Temperatura komfortu. Odchylenie o więcej niż 9°C kosztuje energię.' },
   { key: 'toxRes', name: 'Odporność na toksyny', min: 0, max: 1, def: 0.1, fmt: 2, desc: 'Chroni przed trującymi roślinami, ale zwiększa metabolizm.' },
-  { key: 'fertility', name: 'Płodność', min: 0, max: 1, def: 0.5, fmt: 2, desc: 'Wysoka: częste, tanie, ale słabe potomstwo (strategia r). Niska: rzadkie, silne potomstwo (strategia K).' },
-  { key: 'lifespan', name: 'Długość życia', min: 0.4, max: 5, def: 2, fmt: 2, unit: ' lat', desc: 'Maksymalny wiek. Dłuższe życie trochę zwiększa metabolizm.' },
-  { key: 'mutRate', name: 'Tempo mutacji', min: 0.01, max: 0.4, def: 0.08, fmt: 3, desc: 'Prawdopodobieństwo mutacji każdego genu u potomka. Samo też ewoluuje.' },
-  { key: 'hue', name: 'Barwa (gen neutralny)', min: 0, max: 360, def: 180, fmt: 0, circular: true, desc: 'Nie wpływa na przeżycie. Pokazuje dryf genetyczny.' },
+  { key: 'fertility', name: 'Płodność', min: 0, max: 1, def: 0.5, fmt: 2, desc: 'Wysoka: częste, tanie, ale małe i słabe potomstwo (strategia r). Niska: rzadkie, duże i silne (strategia K).' },
+  { key: 'lifespan', name: 'Długość życia', min: 0.4, max: 5, def: 2, fmt: 2, unit: ' lat', desc: 'Po ok. 70% życia zaczyna się starzenie: spada sprawność i rośnie ryzyko śmierci. Dłuższe życie trochę zwiększa metabolizm.' },
+  { key: 'mutRate', name: 'Tempo mutacji', min: 0.01, max: 0.4, def: 0.08, fmt: 3, desc: 'Prawdopodobieństwo mutacji każdego allelu u potomka. Samo też ewoluuje.' },
+  { key: 'hue', name: 'Ubarwienie', min: 0, max: 360, def: 30, fmt: 0, circular: true, desc: 'Kolor ciała. Ubarwienie podobne do otoczenia to kamuflaż (trudniej cię zauważyć). Jednocześnie partnerzy oceniają kolor — dobór płciowy może ciągnąć w inną stronę.' },
+  { key: 'prefHue', name: 'Preferowana barwa partnera', min: 0, max: 360, def: 30, fmt: 0, circular: true, desc: 'Jaki kolor partnera wybierają samice. Różne preferencje mogą rozdzielić populację na gatunki.' },
+  { key: 'choosy', name: 'Wybredność', min: 0, max: 1, def: 0.3, fmt: 2, desc: 'Jak bardzo samica trzyma się swojej preferencji. Wybredne samice rzadziej się rozmnażają, ale wzmacniają dobór płciowy.' },
 ];
 export const TRAIT_MAP = Object.fromEntries(TRAITS.map(t => [t.key, t]));
 
@@ -25,44 +30,64 @@ export const PLANT_TRAITS = [
   { key: 'water', name: 'Przystosowanie do wody', min: 0, max: 1, def: 0.15, fmt: 2, desc: '1 = glon, 0 = roślina lądowa.' },
 ];
 
+const wrap = v => ((v % 360) + 360) % 360;
+export function hueDist(a, b) { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+
 export function defaultTraits() {
   const t = {};
   for (const d of TRAITS) t[d.key] = d.def;
   return t;
 }
 
-export function makeGenome(traits = {}, brain = 'instinct') {
+// Fenotyp z dwóch alleli (dla barwy — średnia na kole kolorów)
+function express(d, a, b) {
+  if (!d.circular) return (a + b) / 2;
+  const diff = ((b - a + 540) % 360) - 180;
+  return wrap(a + diff / 2);
+}
+export function expressAll(g) {
+  for (const d of TRAITS) { const al = g.a[d.key]; g.t[d.key] = express(d, al[0], al[1]); }
+  return g;
+}
+
+// Genom z podanych cech; allele lekko się różnią (heterozygota), żeby była zmienność do selekcji.
+export function makeGenome(traits = {}, brain = 'instinct', spread = 0.02) {
   const t = Object.assign(defaultTraits(), traits);
+  const a = {};
+  for (const d of TRAITS) {
+    const e = gauss() * (d.max - d.min) * spread;
+    a[d.key] = d.circular ? [wrap(t[d.key] + e * 0.3), wrap(t[d.key] - e * 0.3)] : [clamp(t[d.key] + e, d.min, d.max), clamp(t[d.key] - e, d.min, d.max)];
+  }
   const w = brain === 'random' ? randomWeights(1) : brain instanceof Float32Array ? brain : instinctWeights(0.25, t.diet);
-  return { t, w };
+  return expressAll({ t: {}, a, w });
 }
 
 export function randomizeTraits(base, amount) {
   const t = Object.assign({}, base);
   for (const d of TRAITS) {
-    if (d.key === 'hue') { t.hue = ((t.hue + gauss() * 40 * amount) % 360 + 360) % 360; continue; }
+    if (d.circular) { t[d.key] = wrap(t[d.key] + gauss() * 40 * amount); continue; }
     t[d.key] = clamp(t[d.key] + gauss() * (d.max - d.min) * 0.15 * amount, d.min, d.max);
   }
   return t;
 }
 
-function mutateTrait(d, v, rate, big) {
+function mutateAllele(d, v, rate, big) {
   const range = d.max - d.min;
   if (chance(rate)) v += gauss() * range * 0.05;
   if (chance(big)) v += gauss() * range * 0.3;
-  if (d.circular) return ((v % 360) + 360) % 360;
+  if (d.circular) return wrap(v);
   return clamp(v, d.min, d.max);
 }
 
+// Rozmnażanie płciowe: z każdej pary alleli rodzica losowo jeden trafia do potomka (prawo Mendla).
 export function crossover(a, b, cfg) {
-  const t = {};
+  const al = {};
   for (const d of TRAITS) {
-    const r = Math.random();
-    if (d.circular) t[d.key] = r < 0.5 ? a.t[d.key] : b.t[d.key];
-    else t[d.key] = r < 0.4 ? a.t[d.key] : r < 0.8 ? b.t[d.key] : (a.t[d.key] + b.t[d.key]) / 2;
+    const pa = a.a[d.key], pb = b.a[d.key];
+    al[d.key] = [pa[Math.random() < 0.5 ? 0 : 1], pb[Math.random() < 0.5 ? 0 : 1]];
   }
-  const w = crossWeights(a.w, b.w);
-  const g = { t, w };
+  const g = { t: {}, a: al, w: crossWeights(a.w, b.w) };
+  expressAll(g);
   mutate(g, cfg);
   return g;
 }
@@ -70,12 +95,21 @@ export function crossover(a, b, cfg) {
 export function mutate(g, cfg) {
   const rate = clamp(g.t.mutRate * cfg.mutationScale, 0, 1);
   const big = cfg.bigMutationChance;
-  for (const d of TRAITS) g.t[d.key] = mutateTrait(d, g.t[d.key], rate, big);
+  for (const d of TRAITS) {
+    const al = g.a[d.key];
+    al[0] = mutateAllele(d, al[0], rate, big);
+    al[1] = mutateAllele(d, al[1], rate, big);
+  }
+  expressAll(g);
   mutateWeights(g.w, rate * 0.5 * cfg.brainMutation, Math.max(0.2, cfg.brainMutation), big);
   return g;
 }
 
-export function cloneGenome(g) { return { t: Object.assign({}, g.t), w: new Float32Array(g.w) }; }
+export function cloneGenome(g) {
+  const a = {};
+  for (const k in g.a) a[k] = g.a[k].slice();
+  return { t: Object.assign({}, g.t), a, w: new Float32Array(g.w) };
+}
 
 // Wektor genomu (cechy znormalizowane + wagi) — do liczenia średnich gatunków.
 export const VEC_LEN = TRAITS.length + NW;
@@ -103,8 +137,24 @@ export function distVec(a, b) {
   return dt * 2 + dw * 0.35;
 }
 
-export function serializeGenome(g) { return { t: g.t, w: Array.from(g.w, v => Math.round(v * 1000) / 1000) }; }
-export function deserializeGenome(o) { return { t: Object.assign(defaultTraits(), o.t), w: new Float32Array(o.w.length === NW ? o.w : randomWeights(1)) }; }
+const r3 = v => Math.round(v * 1000) / 1000;
+export function serializeGenome(g) {
+  const a = {};
+  for (const k in g.a) a[k] = g.a[k].map(r3);
+  return { t: g.t, a, w: Array.from(g.w, r3) };
+}
+export function deserializeGenome(o) {
+  const t = Object.assign(defaultTraits(), o.t);
+  const w = new Float32Array(o.w && o.w.length === NW ? o.w : instinctWeights(0.25, t.diet));
+  if (o.a) {
+    const a = {};
+    for (const d of TRAITS) a[d.key] = o.a[d.key] ? o.a[d.key].slice() : [t[d.key], t[d.key]];
+    return expressAll({ t, a, w });
+  }
+  // starszy format (bez alleli)
+  const g = makeGenome(t, w, 0);
+  return g;
+}
 
 // --- Rośliny ---
 export function defaultPlantGenome(water = false) {

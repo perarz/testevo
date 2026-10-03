@@ -175,7 +175,7 @@ function onMove(e) {
     const sp = app.sim.species.get(c.sp);
     const d = c.g.t.diet;
     tip.innerHTML = `<b style="color:hsl(${sp ? sp.hue : 0},80%,65%)">${sp ? sp.name : '?'}</b> <span class="muted">#${c.id}</span><br>` +
-      `${d < 0.33 ? 'roślinożerca' : d < 0.66 ? 'wszystkożerca' : 'mięsożerca'} · energia ${Math.round(c.energy / c.maxE * 100)}% · wiek ${(c.age / app.cfg.yearLength).toFixed(1)} r.`;
+      `${c.sex === 1 ? '♀' : '♂'} ${c.gf < 1 ? 'młode · ' : ''}${d < 0.33 ? 'roślinożerca' : d < 0.66 ? 'wszystkożerca' : 'mięsożerca'} · energia ${Math.round(c.energy / c.maxE * 100)}% · wiek ${(c.age / app.cfg.yearLength).toFixed(1)} r.`;
     tip.style.display = 'block';
     let tx = e.offsetX + 14, ty = e.offsetY + 14;
     if (tx + 240 > mainRect.width) tx = e.offsetX - 250;

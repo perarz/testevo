@@ -299,6 +299,7 @@ p.note { color: var(--text-2); font-size: 12px; margin: 6px 0; }
 .trait-row { display: grid; grid-template-columns: 1fr 64px; gap: 6px; align-items: center; font-size: 12px; margin: 3px 0; }
 .trait-row .bar { height: 5px; background: var(--border); border-radius: 3px; position: relative; grid-column: 1 / 3; }
 .trait-row .bar > div { position: absolute; top: -2px; width: 3px; height: 9px; border-radius: 2px; background: var(--accent); }
+.trait-row .bar > .al { width: 2px; background: var(--muted); top: -1px; height: 7px; }
 .trait-row .v { text-align: right; font-family: var(--mono); color: var(--text-2); }
 .empty { color: var(--muted); text-align: center; padding: 30px 10px; }
 
