@@ -33,6 +33,8 @@ export const DEFAULTS = {
   meatDecay: 1,
   maturity: 0.12,
   reproCost: 1,
+  parentalCare: true,
+  packHunting: true,
 
   // Ewolucja
   mutationScale: 1,
@@ -71,6 +73,8 @@ export const SCHEMA = [
   { group: 'creatures', key: 'meatNutrition', label: 'Wartość odżywcza mięsa', min: 0.1, max: 4, step: 0.05 },
   { group: 'creatures', key: 'meatDecay', label: 'Tempo gnicia mięsa', min: 0, max: 5, step: 0.05 },
   { group: 'creatures', key: 'maturity', label: 'Dojrzałość (część życia)', min: 0.02, max: 0.5, step: 0.01, tip: 'Po jakiej części życia stworek może się rozmnażać.' },
+  { group: 'creatures', key: 'parentalCare', label: 'Opieka nad młodymi', type: 'bool' },
+  { group: 'creatures', key: 'packHunting', label: 'Premia za polowanie w stadzie', type: 'bool' },
   { group: 'creatures', key: 'reproCost', label: 'Koszt rozmnażania', min: 0.2, max: 3, step: 0.05 },
 
   { group: 'evo', key: 'mutationScale', label: 'Mnożnik mutacji', min: 0, max: 5, step: 0.05, tip: 'Każdy stworek ma też własny gen „tempo mutacji”, który może ewoluować. To jest globalny mnożnik.' },

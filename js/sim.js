@@ -84,6 +84,9 @@ export class Sim {
   }
 
   initState() {
+    this.byId = new Map();
+    this.careGiven = 0;
+    this.packKills = 0;
     this.tick = 0;
     this.nextId = 1;
     this.creatures = [];
@@ -222,12 +225,13 @@ export class Sim {
       sp: sp.id, parents: o.parentIds || [], children: 0, kills: 0, born: this.tick,
       eatenPlant: 0, eatenMeat: 0,
       inp: new Float32Array(NI), hidden: new Float32Array(NH), out: new Float32Array(NO),
-      mem: 0, mem2: 0, stam: 1, infected: 0, immune: 0, speedNow: 0, ready: false, dead: false, cause: null,
+      mem: 0, mem2: 0, stam: 1, fed: 0, infected: 0, immune: 0, speedNow: 0, ready: false, dead: false, cause: null,
       localT: 0, stress: 0, attacking: 0,
     };
     this.setBody(c);
     c.energy = c.maxE * (o.energy ?? 0.6);
     if (c.gen > this.maxGen) this.maxGen = c.gen;
+    this.byId.set(c.id, c);
     if (o.direct) this.creatures.push(c); else this.newborn.push(c);
     return c;
   }
@@ -349,7 +353,7 @@ export class Sim {
     const mateThr = cfg.mateThreshold;
     let bmate = null, bmated = hear * hear;
     let bthreat = null, btd = Infinity, bprey = null, bpyd = Infinity, bnear = null, bnd = Infinity;
-    let hx = 0, hy = 0, hn = 0;
+    let hx = 0, hy = 0, hn = 0, pack = null, packD = Infinity;
     const iAmPredator = t.diet > 0.3;
     let bpw = 0, bpyScore = Infinity;
     // czujność: zwierzę z głową w trawie gorzej wypatruje drapieżników
@@ -367,10 +371,15 @@ export class Sim {
       const motion = 0.72 + 0.28 * Math.min(1, o.speedNow / 0.9);
       const vf = camo * motion;
       if (d > vis2 * vf * vf || !seen(o.x, o.y, d, o.r)) return;
-      if (kin) { hx += dx; hy += dy; hn++; return; }
+      if (kin) {
+        hx += dx; hy += dy; hn++;
+        // ktoś z mojego gatunku właśnie poluje — można dołączyć
+        if (o.attacking && o.attackTarget && !o.attackTarget.dead && d < packD) { packD = d; pack = o.attackTarget; }
+        return;
+      }
       const od = o.g.t.diet;
       if (od > 0.45 && o.r > c.r * 0.6 && od > t.diet - 0.2 && d < btd && d < vis2 * vf * vf * vigil) { btd = d; bthreat = o; }
-      if (iAmPredator && o.r < c.r * 1.4) {
+      if (iAmPredator && (o.r < c.r * 1.4 || (cfg.packHunting && o.packTick >= this.tick - 1 && o.packSp === c.sp && o.r < c.r * 2.5))) {
         // drapieżnik woli słabe ofiary: młode, stare, ranne, chore
         const oa = o.age / (o.g.t.lifespan * yl);
         const weak = clamp(Math.max(1 - o.hp / o.maxHp, (1 - o.gf) * 1.6, (oa - 0.7) * 2.5, o.infected ? 0.6 : 0), 0, 1);
@@ -410,6 +419,15 @@ export class Sim {
     inp[IN.mem1] = c.mem;
     inp[IN.mem2] = c.mem2;
     inp[IN.clock] = Math.sin(c.age * 0.05);
+    inp[IN.packA] = pack ? rel(pack.x, pack.y) : 0;
+    // młode wyczuwają rodzica (matkę, a gdy jej nie ma — ojca)
+    let parent = null;
+    if (c.gf < 1 && c.parents.length) {
+      parent = this.byId.get(c.parents[0]) || this.byId.get(c.parents[1]) || null;
+      if (parent && (parent.x - cx) ** 2 + (parent.y - cy) ** 2 > hear * hear) parent = null;
+    }
+    if (parent) { const pd = Math.hypot(parent.x - cx, parent.y - cy); inp[IN.parentA] = rel(parent.x, parent.y); inp[IN.parentD] = Math.max(0, 1 - pd / hear); }
+    else { inp[IN.parentA] = 0; inp[IN.parentD] = 0; }
     inp[IN.bias] = 1;
 
     // --- Myślenie ---
@@ -477,18 +495,43 @@ export class Sim {
 
     // --- Atak (na ofiarę, a w obronie — na napastnika) ---
     c.attacking = 0;
+    c.attackTarget = null;
     let target = null;
     if (bprey && bpyd < (c.r + bprey.r + 5) ** 2) target = bprey;
     else if (bthreat && btd < (c.r + bthreat.r + 3) ** 2) target = bthreat;
     if (out[3] > 0 && target) {
-      const power = 2 * cfg.attackPower * c.m * (0.15 + 0.85 * t.diet) * out[3];
+      // polowanie w stadzie: każdy inny napastnik z mojego gatunku w ostatnich ticach zwiększa obrażenia
+      if (target.packTick !== this.tick - 1 && target.packTick !== this.tick) { target.packSp = c.sp; target.packN = 0; target.packIds = []; }
+      if (target.packSp === c.sp && !target.packIds.includes(c.id)) { target.packIds.push(c.id); target.packN = target.packIds.length; }
+      target.packTick = this.tick;
+      const allies = cfg.packHunting && target.packSp === c.sp ? target.packN : 1;
+      const power = 2 * cfg.attackPower * c.m * (0.15 + 0.85 * t.diet) * out[3] * Math.min(1.8, 1 + 0.3 * (allies - 1));
       target.hp -= power;
+      c.attackTarget = target;
       c.energy -= 0.02 * c.m * out[3];
       c.attacking = 1;
       target.hurt = this.tick;
       target.lastAttacker = c.id;
       target.lastAttackerDiet = t.diet;
-      if (target.hp <= 0 && !target.dead) { c.kills++; this.kill(target, 'predation'); }
+      if (target.hp <= 0 && !target.dead) {
+        c.kills++;
+        if (allies > 1) this.packKills++;
+        this.kill(target, 'predation');
+      }
+    }
+
+    // --- Opieka: rodzic karmi młode, które są tuż obok (matka mocniej, ojciec słabiej) ---
+    if (parent && cfg.parentalCare && c.energy < c.maxE * 0.9 && (parent.x - cx) ** 2 + (parent.y - cy) ** 2 < (c.r + parent.r + 12) ** 2) {
+      const isMother = parent.id === c.parents[0];
+      const reserve = parent.maxE * 0.6; // rodzic nie oddaje energii, której sam potrzebuje
+      if (parent.energy > reserve) {
+        const amount = Math.min(parent.energy - reserve, parent.g.t.care * 0.2 * parent.m * (isMother ? 1 : 0.5));
+        parent.energy -= amount;
+        c.energy = Math.min(c.maxE, c.energy + amount * 0.9);
+        c.fed += amount * 0.9;
+        this.careGiven += amount;
+        c.beingFed = this.tick;
+      }
     }
 
     // --- Choroba ---
@@ -569,6 +612,7 @@ export class Sim {
     if (c.dead) return;
     c.dead = true;
     c.cause = cause;
+    this.byId.delete(c.id);
     this.deaths[cause] = (this.deaths[cause] || 0) + 1;
     const sp = this.species.get(c.sp);
     if (sp) sp.count = Math.max(0, sp.count - 1);
@@ -804,7 +848,7 @@ export class Sim {
         id: c.id, x: r2(c.x), y: r2(c.y), angle: r2(c.angle), g: serializeGenome(c.g), sp: c.sp, gen: c.gen,
         age: c.age, ageVar: c.ageVar, energy: r2(c.energy), hp: r2(c.hp), cooldown: c.cooldown, children: c.children,
         kills: c.kills, parents: c.parents, born: c.born, infected: c.infected, immune: c.immune, mem: c.mem, mem2: c.mem2,
-        eatenPlant: r2(c.eatenPlant), eatenMeat: r2(c.eatenMeat), sex: c.sex, gf: r2(c.gf), gf0: r2(c.gf0),
+        eatenPlant: r2(c.eatenPlant), eatenMeat: r2(c.eatenMeat), fed: r2(c.fed || 0), sex: c.sex, gf: r2(c.gf), gf0: r2(c.gf0),
       })),
       nutr: Array.from(this.nutr, r2),
       plants: this.plants.map(p => ({ x: r2(p.x), y: r2(p.y), g: p.g, energy: r2(p.energy), age: p.age, life: p.life })),
@@ -812,6 +856,7 @@ export class Sim {
       species: this.species.serialize(),
       history: this.history, historyEvery: this.historyEvery,
       events: this.events, deaths: this.deaths, births: this.births, maxGen: this.maxGen, rejections: this.rejections || 0,
+      careGiven: this.careGiven, packKills: this.packKills,
       disasters: this.disasters,
       genePool: this.genePool.map(e => ({ ...e, g: serializeGenome(e.g) })),
     };
@@ -839,6 +884,7 @@ export class Sim {
       this.setBody(c);
       c.hp = Math.min(hp, c.maxHp); c.energy = Math.min(energy, c.maxE);
       this.creatures.push(c);
+      this.byId.set(c.id, c);
     }
     this.plants = s.plants.map(p => Object.assign({ id: 0, dead: false, ci: -1, tv: -1 }, p));
     if (s.nutr && s.nutr.length === this.nutr.length) this.nutr.set(s.nutr);
@@ -849,6 +895,8 @@ export class Sim {
     this.deaths = Object.assign(this.deaths, s.deaths);
     this.births = s.births || 0;
     this.rejections = s.rejections || 0;
+    this.careGiven = s.careGiven || 0;
+    this.packKills = s.packKills || 0;
     this.maxGen = s.maxGen || 0;
     this.disasters = s.disasters || [];
     this.genePool = (s.genePool || []).map(e => ({ ...e, g: deserializeGenome(e.g) }));

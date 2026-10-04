@@ -19,6 +19,7 @@ export const COLOR_MODES = [
   { key: 'lifespan', name: 'Długość życia', trait: true },
   { key: 'mutRate', name: 'Tempo mutacji', trait: true },
   { key: 'choosy', name: 'Wybredność', trait: true },
+  { key: 'care', name: 'Opieka nad młodymi', trait: true },
   { key: 'hue', name: 'Ubarwienie' },
   { key: 'sex', name: 'Płeć' },
   { key: 'age', name: 'Wiek' },
@@ -230,6 +231,16 @@ export class Renderer {
         ctx.beginPath(); ctx.arc(c.rx, c.ry, c.g.t.vision * sim.terrain.at(c.rx, c.ry).vision, 0, TAU); ctx.stroke();
       }
       ctx.setLineDash([]);
+    }
+
+    // linia rodzic — karmione młode
+    ctx.strokeStyle = 'rgba(255,150,210,0.6)';
+    ctx.lineWidth = 1 / z;
+    for (const c of sim.creatures) {
+      if (!c.beingFed || sim.tick - c.beingFed > 10 || !c.parents.length) continue;
+      const p = sim.byId.get(c.parents[0]) || sim.byId.get(c.parents[1]);
+      if (!p) continue;
+      ctx.beginPath(); ctx.moveTo(c.rx, c.ry); ctx.lineTo(p.rx ?? p.x, p.ry ?? p.y); ctx.stroke();
     }
 
     // stworki — poświata

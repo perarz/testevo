@@ -13,6 +13,7 @@ export const TRAITS = [
   { key: 'tempOpt', name: 'Optymalna temp.', min: -15, max: 45, def: 16, fmt: 1, unit: '°C', desc: 'Temperatura komfortu. Odchylenie o więcej niż 9°C kosztuje energię.' },
   { key: 'toxRes', name: 'Odporność na toksyny', min: 0, max: 1, def: 0.1, fmt: 2, desc: 'Chroni przed trującymi roślinami, ale zwiększa metabolizm.' },
   { key: 'fertility', name: 'Płodność', min: 0, max: 1, def: 0.5, fmt: 2, desc: 'Wysoka: częste, tanie, ale małe i słabe potomstwo (strategia r). Niska: rzadkie, duże i silne (strategia K).' },
+  { key: 'care', name: 'Opieka nad młodymi', min: 0, max: 1, def: 0.3, fmt: 2, desc: 'Ile energii rodzic oddaje młodym, które trzymają się blisko niego. Młode szybciej rosną i rzadziej giną z głodu, ale rodzic sam musi więcej jeść.' },
   { key: 'lifespan', name: 'Długość życia', min: 0.4, max: 5, def: 2, fmt: 2, unit: ' lat', desc: 'Po ok. 70% życia zaczyna się starzenie: spada sprawność i rośnie ryzyko śmierci. Dłuższe życie trochę zwiększa metabolizm.' },
   { key: 'mutRate', name: 'Tempo mutacji', min: 0.01, max: 0.4, def: 0.08, fmt: 3, desc: 'Prawdopodobieństwo mutacji każdego allelu u potomka. Samo też ewoluuje.' },
   { key: 'hue', name: 'Ubarwienie', min: 0, max: 360, def: 30, fmt: 0, circular: true, desc: 'Kolor ciała. Ubarwienie podobne do otoczenia to kamuflaż (trudniej cię zauważyć). Jednocześnie partnerzy oceniają kolor — dobór płciowy może ciągnąć w inną stronę.' },

@@ -467,7 +467,9 @@ export class UI {
     $('#iName').innerHTML = `<span style="color:hsl(${sp ? sp.hue : 0},80%,65%)">●</span> ${esc(sp ? sp.name : '?')}`;
     $('#iSub').textContent = `${c.sex === 1 ? '♀ samica' : '♂ samiec'} · ${DIET_NAMES[dietClass(t.diet)]} · pokolenie ${c.gen}`;
     const ageFrac = c.age / (t.lifespan * yl);
-    const st = c.dead ? `nie żyje: ${DEATH_CAUSES[c.cause] || c.cause}` : c.infected ? 'chory' : c.attacking ? 'atakuje' : c.ready ? 'szuka partnera' :
+    const packHunt = c.attacking && c.attackTarget && c.attackTarget.packN > 1 && c.attackTarget.packSp === c.sp;
+    const st = c.dead ? `nie żyje: ${DEATH_CAUSES[c.cause] || c.cause}` : c.infected ? 'chory' : packHunt ? `poluje w stadzie (${c.attackTarget.packN})` : c.attacking ? 'atakuje' :
+      c.beingFed && sim.tick - c.beingFed < 20 ? 'karmione przez rodzica' : c.ready ? 'szuka partnera' :
       c.gf < 1 ? 'młody (rośnie)' : ageFrac > 0.75 ? 'stary' : 'dorosły';
     $('#iState').textContent = st;
     $('#iE').textContent = `${Math.max(0, c.energy).toFixed(0)} / ${c.maxE.toFixed(0)}`;
@@ -478,6 +480,7 @@ export class UI {
       ['Wiek', `${(c.age / yl).toFixed(2)} lat (starzenie od ${(t.lifespan * 0.7).toFixed(2)})`],
       ['Rozmiar teraz / docelowy', `${c.r.toFixed(1)} / ${t.size.toFixed(1)}`],
       ['Kondycja (sprint)', `${Math.round(c.stam * 100)}%`],
+      ['Otrzymane od rodziców', `${(c.fed || 0).toFixed(0)} energii`],
       ['Kamuflaż w tym miejscu', `${Math.round((1 - hueDist(t.hue, sim.terrain.at(c.x, c.y).hue) / 180) * 100)}%`],
       ['Dzieci', c.children], ['Zabójstwa', c.kills],
       ['Zjedzone rośliny', c.eatenPlant.toFixed(0)], ['Zjedzone mięso', c.eatenMeat.toFixed(0)],
@@ -503,7 +506,9 @@ export class UI {
     barChart($('#chartDeaths'), Object.entries(DEATH_CAUSES).map(([k, label]) => ({ label, value: sim.deaths[k] || 0, color: '#4fd1c5' })));
     $('#lifeStats').innerHTML = `<dt>Narodziny</dt><dd>${sim.births}</dd><dt>Zaloty odrzucone przez samice</dt><dd>${sim.rejections || 0}</dd>` +
       `<dt>Samice / samce teraz</dt><dd>${sim.creatures.filter(c => c.sex === 1).length} / ${sim.creatures.filter(c => c.sex !== 1).length}</dd>` +
-      `<dt>Młode (rosnące)</dt><dd>${sim.creatures.filter(c => c.gf < 1).length}</dd>`;
+      `<dt>Młode (rosnące)</dt><dd>${sim.creatures.filter(c => c.gf < 1).length}</dd>` +
+      `<dt>Energia oddana młodym przez rodziców</dt><dd>${Math.round(sim.careGiven || 0)}</dd>` +
+      `<dt>Ofiary upolowane w stadzie</dt><dd>${sim.packKills || 0}</dd>`;
     $('#eventLog').innerHTML = sim.events.slice().reverse().map(e => `<div class="${e.kind}"><time>r. ${(e.tick / yl).toFixed(2)}</time>${esc(e.text)}</div>`).join('');
   }
 

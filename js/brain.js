@@ -9,7 +9,8 @@ export const INPUTS = [
   'Mięso: kierunek', 'Mięso: bliskość',
   'Zagrożenie: kierunek', 'Zagrożenie: bliskość',
   'Ofiara: kierunek', 'Ofiara: bliskość', 'Ofiara: osłabienie',
-  'Stado: kierunek', 'Stado: liczebność',
+  'Stado: kierunek', 'Stado: liczebność', 'Polowanie stada: kierunek',
+  'Rodzic: kierunek', 'Rodzic: bliskość',
   'Partner: kierunek', 'Partner: bliskość',
   'Temperatura (stres)', 'Lepsza temp.: lewo/prawo', 'Teren przed sobą', 'Gotowy do godów', 'Kondycja (sprint)',
   'Pamięć 1', 'Pamięć 2', 'Zegar wewnętrzny', 'Stała (bias)',
@@ -17,9 +18,9 @@ export const INPUTS = [
 export const OUTPUTS = ['Skręt', 'Ruch', 'Chęć godów', 'Atak', 'Pamięć 1', 'Pamięć 2'];
 export const IN = Object.fromEntries([
   'energy', 'hp', 'age', 'plantA', 'plantD', 'meatA', 'meatD', 'threatA', 'threatD', 'preyA', 'preyD', 'preyWeak',
-  'herdA', 'herdN', 'mateA', 'mateD', 'temp', 'tempDir', 'terrain', 'ready', 'stamina', 'mem1', 'mem2', 'clock', 'bias',
+  'herdA', 'herdN', 'packA', 'parentA', 'parentD', 'mateA', 'mateD', 'temp', 'tempDir', 'terrain', 'ready', 'stamina', 'mem1', 'mem2', 'clock', 'bias',
 ].map((k, i) => [k, i]));
-export const NI = INPUTS.length, NH = 12, NO = OUTPUTS.length;
+export const NI = INPUTS.length, NH = 14, NO = OUTPUTS.length;
 export const W1 = NH * (NI + 1), W2 = NO * (NH + 1);
 export const NW = W1 + W2;
 
@@ -35,8 +36,8 @@ export function instinctWeights(noise = 0.25, diet = 0.1) {
   const s1 = (h, inp, v) => { w[h * (NI + 1) + inp] = v; };
   const s2 = (o, h, v) => { w[W1 + o * (NH + 1) + h] = v; };
   // neurony z instynktem mają mniej szumu
-  for (let h = 0; h < 9; h++) for (let i = 0; i <= NI; i++) w[h * (NI + 1) + i] *= 0.3;
-  for (let o = 0; o < NO; o++) for (let h = 0; h < 9; h++) w[W1 + o * (NH + 1) + h] *= 0.3;
+  for (let h = 0; h < 11; h++) for (let i = 0; i <= NI; i++) w[h * (NI + 1) + i] *= 0.3;
+  for (let o = 0; o < NO; o++) for (let h = 0; h < 11; h++) w[W1 + o * (NH + 1) + h] *= 0.3;
   const herb = 1 - diet, carn = Math.max(0, diet - 0.3);
   // h0: skręt w stronę pożywienia (rośliny, mięso, ofiara — zależnie od diety)
   s1(0, IN.plantA, 2.4 * herb);
@@ -49,6 +50,12 @@ export function instinctWeights(noise = 0.25, diet = 0.1) {
   // h2: „idź do przodu” spokojnym tempem
   s1(2, IN.bias, 1.5); s1(2, IN.energy, -0.4 - 1.4 * diet); // najedzony odpoczywa (zwłaszcza drapieżnik)
   s2(1, 2, 0.8);
+  // h9: młode trzymają się rodzica (gdy rodzica nie ma, kierunek = 0 i neuron milczy)
+  s1(9, IN.parentA, 2.5);
+  s2(0, 9, 2.2);
+  // h10: dołączanie do polowania stada (drapieżniki)
+  s1(10, IN.packA, 2.5);
+  s2(0, 10, 1.2 * carn * 2);
   // h8: termotaksja — skręt w stronę lepszej temperatury (sygnał rośnie z dyskomfortem)
   s1(8, IN.tempDir, 2.0);
   s2(0, 8, 1.2);
