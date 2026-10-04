@@ -1,5 +1,5 @@
 // Rdzeń symulacji. Nie korzysta z DOM, więc da się go uruchomić także w Node.
-import { clamp, rand, gauss, chance, pick, angleDiff, Grid, TAU } from './util.js';
+import { clamp, rand, randInt, gauss, chance, pick, angleDiff, Grid, TAU } from './util.js';
 import { Terrain, BIOMES } from './terrain.js';
 import { think, NI, NH, NO, IN } from './brain.js';
 import {
@@ -85,6 +85,8 @@ export class Sim {
 
   initState() {
     this.byId = new Map();
+    this.carnPool = [];
+    this.lastImmigration = -1e9;
     this.careGiven = 0;
     this.packKills = 0;
     this.tick = 0;
@@ -109,6 +111,12 @@ export class Sim {
     this.fertMul = 1;
     // składniki odżywcze w glebie (1 = normalnie); użyźniają je odchody i rozkładające się ciała
     this.nutr = new Float32Array(this.terrain.cols * this.terrain.rows).fill(1);
+    // mapy zapachów (komórka 50 jednostek): ślady ofiar/padliny i bogactwo pastwisk; rozchodzą się i zanikają
+    this.scentCell = 50;
+    this.scentCols = Math.ceil(WORLD_W / 50); this.scentRows = Math.ceil(WORLD_H / 50);
+    this.preyScent = new Float32Array(this.scentCols * this.scentRows);
+    this.foodScent = new Float32Array(this.scentCols * this.scentRows);
+    this.scentTmp = new Float32Array(this.scentCols * this.scentRows);
     this.creatureGrid = new Grid(WORLD_W, WORLD_H, 60);
     this.plantGrid = new Grid(WORLD_W, WORLD_H, 40);
     this.meatGrid = new Grid(WORLD_W, WORLD_H, 60);
@@ -297,7 +305,9 @@ export class Sim {
 
     this.assistPopulation();
 
+    if (this.tick % 10 === 0) this.updateScent();
     if (this.tick % 60 === 0) this.updateSpecies();
+    if (this.tick % 300 === 0) this.immigrate();
     if (this.tick % this.historyEvery === 0) this.recordHistory();
   }
 
@@ -353,16 +363,18 @@ export class Sim {
     const mateThr = cfg.mateThreshold;
     let bmate = null, bmated = hear * hear;
     let bthreat = null, btd = Infinity, bprey = null, bpyd = Infinity, bnear = null, bnd = Infinity;
-    let hx = 0, hy = 0, hn = 0, pack = null, packD = Infinity;
+    let hx = 0, hy = 0, hn = 0, pack = null, packD = Infinity, kinNear = 0;
     const iAmPredator = t.diet > 0.3;
     let bpw = 0, bpyScore = Infinity;
     // czujność: zwierzę z głową w trawie gorzej wypatruje drapieżników
     const vigil = c.eating ? 0.35 : 1;
+    const nose = 40 + 0.25 * t.vision, nose2 = nose * nose;
     // daleki „słuch” potrzebny jest tylko gotowym do godów; reszta przeszukuje okolicę w zasięgu wzroku
     this.creatureGrid.query(cx, cy, c.ready ? hear : vis, o => {
       if (o === c || o.dead) return;
       const dx = o.x - cx, dy = o.y - cy, d = dx * dx + dy * dy;
       const kin = o.sp === c.sp;
+      if (kin && d < 90000) kinNear++;
       if (d < bnd) { bnd = d; bnear = o; }
       if (o.ready && c.ready && o.sex !== c.sex && d < bmated && (kin || distVec(c.vec, o.vec) < mateThr)) { bmated = d; bmate = o; }
       // kamuflaż (kolor jak otoczenie) i bezruch (ruch zdradza) zmniejszają odległość, z której widać stworka
@@ -370,7 +382,9 @@ export class Sim {
       const camo = 0.65 + 0.35 * hueDist(o.g.t.hue, ob.hue) / 180;
       const motion = 0.72 + 0.28 * Math.min(1, o.speedNow / 0.9);
       const vf = camo * motion;
-      if (d > vis2 * vf * vf || !seen(o.x, o.y, d, o.r)) return;
+      // węch z bliska: w promieniu „nosa” zwierzę jest wyczuwalne bez względu na kamuflaż, bezruch i kierunek patrzenia
+      const smelled = d < nose2;
+      if (!smelled && (d > vis2 * vf * vf || !seen(o.x, o.y, d, o.r))) return;
       if (kin) {
         hx += dx; hy += dy; hn++;
         // ktoś z mojego gatunku właśnie poluje — można dołączyć
@@ -378,7 +392,7 @@ export class Sim {
         return;
       }
       const od = o.g.t.diet;
-      if (od > 0.45 && o.r > c.r * 0.6 && od > t.diet - 0.2 && d < btd && d < vis2 * vf * vf * vigil) { btd = d; bthreat = o; }
+      if (od > 0.45 && o.r > c.r * 0.6 && od > t.diet - 0.2 && d < btd && (smelled || d < vis2 * vf * vf * vigil)) { btd = d; bthreat = o; }
       if (iAmPredator && (o.r < c.r * 1.4 || (cfg.packHunting && o.packTick >= this.tick - 1 && o.packSp === c.sp && o.r < c.r * 2.5))) {
         // drapieżnik woli słabe ofiary: młode, stare, ranne, chore
         const oa = o.age / (o.g.t.lifespan * yl);
@@ -412,6 +426,28 @@ export class Sim {
       c.tempDir = here > 4 ? clamp((probe(0.7) - probe(-0.7)) / 4, -1, 1) * Math.min(1, (here - 4) / 8) : 0;
     }
     inp[IN.tempDir] = c.tempDir || 0;
+    // zmysły dalekiego zasięgu (co 4 ticki): teren, zapach ofiar i pastwisk po lewej i po prawej
+    if (c.age % 4 === 0) {
+      const at = (da, dist) => { const a2 = ang + da; return [cx + Math.cos(a2) * dist, cy + Math.sin(a2) * dist]; };
+      const [lx, ly] = at(-0.7, 45), [rx, ry] = at(0.7, 45);
+      const mv = (x, y) => T.passable(x, y) ? T.at(x, y).move : -0.5;
+      c.terrainDir = clamp((mv(rx, ry) - mv(lx, ly)) * 1.5, -1, 1);
+      const [slx, sly] = at(-0.7, 160), [srx, sry] = at(0.7, 160);
+      const pl = this.preyScent[this.scentIdx(slx, sly)], pr = this.preyScent[this.scentIdx(srx, sry)];
+      c.preyScentDir = (pr - pl) / (pr + pl + 0.05);
+      c.preyScent = Math.min(1, Math.log1p(this.preyScent[this.scentIdx(cx, cy)]) / 3);
+      const fl = this.foodScent[this.scentIdx(slx, sly)], fr = this.foodScent[this.scentIdx(srx, sry)];
+      c.foodScentDir = (fr - fl) / (fr + fl + 0.05);
+    }
+    // skupienie uwagi: gdy widać konkretny cel (ofiarę, roślinę, zagrożenie), sygnały z daleka cichną
+    const focus = (bthreat || (iAmPredator && bprey) || (!iAmPredator && bp)) ? 0.15 : 1;
+    inp[IN.terrainDir] = (c.terrainDir || 0) * (focus < 1 ? 0.5 : 1);
+    inp[IN.preyScentDir] = (c.preyScentDir || 0) * focus;
+    inp[IN.preyScent] = c.preyScent || 0;
+    inp[IN.foodScentDir] = (c.foodScentDir || 0) * focus;
+    inp[IN.tempDir] *= focus;
+    inp[IN.herdA] *= bthreat ? 1 : focus;
+    inp[IN.hungerT] = clamp((this.tick - (c.lastMeal ?? c.born)) / (0.3 * yl), 0, 1) * 2 - 1;
     const ax = cx + Math.cos(ang) * (c.r + 14), ay = cy + Math.sin(ang) * (c.r + 14);
     inp[IN.terrain] = T.passable(ax, ay) ? 1 - T.at(ax, ay).move : 1;
     inp[IN.ready] = c.ready ? 1 : 0;
@@ -435,14 +471,17 @@ export class Sim {
     const out = c.out;
 
     // --- Ruch ---
-    c.angle += out[0] * 0.16 / Math.sqrt(c.m);
+    // bezwładność skrętu: szybkie wahania sygnału się uśredniają, więc ruch jest płynny, a trasy prostsze
+    c.turn = (c.turn || 0) * 0.55 + out[0] * 0.45;
+    c.angle += c.turn * 0.16 / Math.sqrt(c.m);
     // Sprint: zryw do 135% prędkości, ale wyczerpuje kondycję, która wraca w czasie spokojnego ruchu.
     let thrust = Math.max(0, out[1]), sprint = 1;
-    if (thrust > 0.75 && c.stam > 0.05) { sprint = 1.35; c.stam -= 0.012; }
-    else { c.stam = Math.min(1, c.stam + 0.004); if (thrust > 0.75) thrust = 0.75; }
+    if (thrust > 0.85 && c.stam > 0.05) { sprint = 1.35; c.stam -= 0.012; }
+    else { c.stam = Math.min(1, c.stam + 0.004); if (thrust > 0.85) thrust = 0.85; }
     let spd = thrust * sprint * t.speed * biome.move;
     if (c.hp < c.maxHp * 0.3) spd *= 0.7;
     if (c.infected) spd *= 0.8;
+    if (c.gripped > this.tick) spd *= 0.3;
     if (ageFrac > 0.7) spd *= Math.max(0.45, 1 - (ageFrac - 0.7) * 1.4); // starość
     if (spd > 0) {
       const nx = cx + Math.cos(c.angle) * spd, ny = cy + Math.sin(c.angle) * spd;
@@ -481,6 +520,7 @@ export class Sim {
       c.energy += gain;
       c.eatenPlant += gain;
       c.eating = true;
+      c.lastMeal = this.tick;
       if (tox > 0.02) { c.hp -= bite * tox * 0.6; if (c.hp <= 0) { this.kill(c, 'toxin'); return; } }
     }
     if (bm && meatEff > 0.03 && c.energy < c.maxE && bmd < (c.r + 4) ** 2) {
@@ -490,6 +530,7 @@ export class Sim {
       c.energy += gain;
       c.eatenMeat += gain;
       c.eating = true;
+      c.lastMeal = this.tick;
     }
     if (c.energy > c.maxE) c.energy = c.maxE;
 
@@ -497,6 +538,19 @@ export class Sim {
     c.attacking = 0;
     c.attackTarget = null;
     let target = null;
+    // skok: drapieżnik z bliska rzuca się na ofiarę (kosztem kondycji)
+    if (out[3] > 0 && bprey && t.diet > 0.4 && c.stam > 0.35) {
+      const pd = Math.sqrt(bpyd), gap = pd - c.r - bprey.r - 2;
+      if (gap > 0 && gap < 22) {
+        const jump = Math.min(gap, 16);
+        const nx = cx + (bprey.x - cx) / pd * jump, ny = cy + (bprey.y - cy) / pd * jump;
+        if (T.passable(nx, ny)) {
+          c.x = nx; c.y = ny; c.stam -= 0.35;
+          bpyd = (bprey.x - nx) ** 2 + (bprey.y - ny) ** 2;
+          c.pounced = this.tick;
+        }
+      }
+    }
     if (bprey && bpyd < (c.r + bprey.r + 5) ** 2) target = bprey;
     else if (bthreat && btd < (c.r + bthreat.r + 3) ** 2) target = bthreat;
     if (out[3] > 0 && target) {
@@ -505,9 +559,11 @@ export class Sim {
       if (target.packSp === c.sp && !target.packIds.includes(c.id)) { target.packIds.push(c.id); target.packN = target.packIds.length; }
       target.packTick = this.tick;
       const allies = cfg.packHunting && target.packSp === c.sp ? target.packN : 1;
-      const power = 2 * cfg.attackPower * c.m * (0.15 + 0.85 * t.diet) * out[3] * Math.min(1.8, 1 + 0.3 * (allies - 1));
+      const power = 5 * cfg.attackPower * c.m * (0.15 + 0.85 * t.diet) * out[3] * Math.min(1.8, 1 + 0.3 * (allies - 1));
       target.hp -= power;
       c.attackTarget = target;
+      // chwyt: drapieżnik przytrzymuje ofiarę, która przez chwilę ledwo się rusza
+      if (t.diet > 0.4) target.gripped = this.tick + 12;
       c.energy -= 0.02 * c.m * out[3];
       c.attacking = 1;
       target.hurt = this.tick;
@@ -547,8 +603,12 @@ export class Sim {
 
     // --- Rozmnażanie (dwie płcie; samica ponosi większy koszt i wybiera partnera) ---
     const female = c.sex === 1;
-    c.ready = mature && c.cooldown <= 0 && !c.infected && ageFrac < 1 &&
+    // terytorialność drapieżników: w zatłoczonym przez swój gatunek terenie (promień 300) nie przystępują do rozrodu
+    if (c.ready) c.kinNear = kinNear;
+    const crowded = cfg.territoriality && t.diet > 0.5 && (c.kinNear || 0) >= 10;
+    c.ready = mature && c.cooldown <= 0 && !c.infected && ageFrac < 1 && !crowded &&
       c.energy > 100 * c.m * (female ? 0.62 - 0.3 * t.fertility : 0.4) && c.hp > c.maxHp * 0.5;
+    if (crowded && c.age % 300 === 0) c.kinNear = 0; // co jakiś czas sprawdza teren ponownie
     if (c.ready && out[2] > 0 && bmate && bmate.ready && bmate.out[2] > 0 && !bmate.dead &&
       bmated < (c.r + bmate.r + 8) ** 2 &&
       this.roomFor(t.diet) > 0) {
@@ -626,11 +686,50 @@ export class Sim {
     const fit = c.children * 3 + c.age / this.cfg.yearLength + c.kills * 0.5;
     if (fit > 0.3) {
       this.genePool.push({ g: c.g, fit, tick: this.tick, sp: c.sp, gen: c.gen });
+      // osobna pamięć genów udanych drapieżników (źródło imigrantów)
+      if (c.g.t.diet > 0.6 && (c.kills > 0 || c.children > 0)) {
+        this.carnPool.push({ g: c.g, fit: fit + c.kills, sp: c.sp, gen: c.gen });
+        if (this.carnPool.length > 40) this.carnPool.sort((a, b) => b.fit - a.fit).length = 25;
+      }
       if (this.genePool.length > 60) {
         const old = this.tick - 3 * this.cfg.yearLength;
         this.genePool = this.genePool.filter(e => e.tick > old).sort((x, y) => y.fit - x.fit).slice(0, 40);
       }
     }
+  }
+
+  // Efekt ratunkowy: gdy drapieżników prawie nie ma, a ofiar jest dużo, z sąsiednich terenów
+  // (krawędź mapy) przychodzi para drapieżników o genach wcześniejszych, udanych łowców.
+  immigrate() {
+    const cfg = this.cfg;
+    if (!cfg.immigration || this.tick - this.lastImmigration < cfg.yearLength * 0.5) return;
+    let carn = 0, herb = 0;
+    for (const c of this.creatures) { if (c.g.t.diet > 0.6) carn++; else if (c.g.t.diet < 0.33) herb++; }
+    if (carn >= 4 || herb < 50 || this.roomFor(1) < 2) return;
+    this.lastImmigration = this.tick;
+    let src;
+    if (this.carnPool.length) src = this.carnPool.slice().sort((a, b) => b.fit - a.fit).slice(0, 6);
+    // miejsce: ląd przy losowej krawędzi mapy
+    let pos = null;
+    for (let k = 0; k < 40 && !pos; k++) {
+      const side = randInt(0, 3), u = Math.random();
+      const x = side === 0 ? 40 : side === 1 ? WORLD_W - 40 : u * WORLD_W;
+      const y = side === 2 ? 40 : side === 3 ? WORLD_H - 40 : u * WORLD_H;
+      if (this.terrain.passable(x, y) && !this.terrain.at(x, y).water) pos = { x, y };
+    }
+    if (!pos) return;
+    for (let i = 0; i < 2; i++) {
+      let g;
+      if (src) { const a = pick(src), b = pick(src); g = crossover(a.g, b.g, cfg); }
+      else {
+        const base = defaultTraits(); base.diet = 0.9; base.size = 7.5; base.speed = 1.5; base.vision = 120;
+        g = makeGenome(randomizeTraits(base, 0.3), this.opts.brain);
+      }
+      const c = this.spawnCreature(g, pos.x + gauss() * 15, pos.y + gauss() * 15, { energy: 0.8, direct: true, sex: i, parents: src ? [src[0].sp] : null });
+      this.addFx('spawn', c.x, c.y, {});
+    }
+    this.immigrants = (this.immigrants || 0) + 2;
+    this.log('Imigracja: para drapieżników przybyła z sąsiednich terenów (efekt ratunkowy).', 'species');
   }
 
   assistPopulation() {
@@ -714,6 +813,33 @@ export class Sim {
     if (count < cap && chance(cfg.plantSpontaneous / 60)) this.spawnRandomPlant(false);
     // gleba powoli wraca do stanu wyjściowego (wietrzenie skał, wymywanie)
     if (this.tick % 30 === 0) { const n = this.nutr; for (let i = 0; i < n.length; i++) n[i] += (1 - n[i]) * 0.006; }
+  }
+
+  scentIdx(x, y) {
+    const cx = clamp(Math.floor(x / this.scentCell), 0, this.scentCols - 1);
+    const cy = clamp(Math.floor(y / this.scentCell), 0, this.scentRows - 1);
+    return cy * this.scentCols + cx;
+  }
+  // Ofiary i padlina zostawiają zapach, pastwiska „pachną” roślinami. Zapach dyfunduje do sąsiednich
+  // komórek i zanika, więc powstaje gradient wyczuwalny daleko poza zasięgiem wzroku.
+  updateScent() {
+    const P = this.preyScent, F = this.foodScent, cols = this.scentCols, rows = this.scentRows;
+    for (const c of this.creatures) if (c.g.t.diet < 0.5) P[this.scentIdx(c.x, c.y)] += 0.6 * c.m;
+    for (const m of this.meat) P[this.scentIdx(m.x, m.y)] += m.energy * 0.01;
+    if (this.tick % 30 === 0) for (const p of this.plants) F[this.scentIdx(p.x, p.y)] += p.energy * 0.004;
+    const diffuse = (A, decay) => {
+      const T = this.scentTmp;
+      for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+        const i = y * cols + x;
+        let s = 0, n = 0;
+        if (x > 0) { s += A[i - 1]; n++; } if (x < cols - 1) { s += A[i + 1]; n++; }
+        if (y > 0) { s += A[i - cols]; n++; } if (y < rows - 1) { s += A[i + cols]; n++; }
+        T[i] = (A[i] * 0.5 + 0.5 * s / n) * decay;
+      }
+      A.set(T);
+    };
+    diffuse(P, 0.9);
+    if (this.tick % 30 === 0) diffuse(F, 0.85);
   }
 
   updateMeat() {
@@ -859,6 +985,7 @@ export class Sim {
       careGiven: this.careGiven, packKills: this.packKills,
       disasters: this.disasters,
       genePool: this.genePool.map(e => ({ ...e, g: serializeGenome(e.g) })),
+      carnPool: this.carnPool.map(e => ({ ...e, g: serializeGenome(e.g) })), immigrants: this.immigrants || 0,
     };
   }
 
@@ -900,6 +1027,8 @@ export class Sim {
     this.maxGen = s.maxGen || 0;
     this.disasters = s.disasters || [];
     this.genePool = (s.genePool || []).map(e => ({ ...e, g: deserializeGenome(e.g) }));
+    this.carnPool = (s.carnPool || []).map(e => ({ ...e, g: deserializeGenome(e.g) }));
+    this.immigrants = s.immigrants || 0;
     this.nextId = s.nextId;
     for (const p of this.plants) p.id = this.nextId++;
     this.log('Wczytano zapis.', 'info');

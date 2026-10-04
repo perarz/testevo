@@ -83,7 +83,7 @@ export class Renderer {
   buildTerrain(sim) {
     const T = sim.terrain;
     const tq = Math.round(sim.tempOffset / 1.5);
-    const key = `${T.version}|${this.mapMode}|${tq}|${this.mapMode === 'fert' ? Math.round(sim.fertMul * 10) + '|' + Math.floor(sim.tick / 300) : ''}`;
+    const key = `${T.version}|${this.mapMode}|${tq}|${this.mapMode === 'fert' ? Math.round(sim.fertMul * 10) + '|' + Math.floor(sim.tick / 300) : ''}${this.mapMode === 'scent' ? Math.floor(sim.tick / 30) : ''}`;
     if (key === this.texKey) return;
     this.texKey = key;
     const W = T.cols * TEX_SCALE, H = T.rows * TEX_SCALE;
@@ -123,6 +123,12 @@ export class Renderer {
           if (n < 0.5) { const k = n / 0.5; r = lerp(40, 70, k); g = lerp(90, 72, k); bl = lerp(170, 72, k); }
           else { const k = (n - 0.5) / 0.5; r = lerp(70, 190, k); g = lerp(72, 60, k); bl = lerp(72, 45, k); }
           if (!b.pass) { r *= 0.4; g *= 0.4; bl *= 0.4; }
+        } else if (this.mapMode === 'scent') {
+          // zapach ofiar (to, co czują drapieżniki): od ciemnego do jasnego bursztynu
+          const wx = (px + 0.5) / TEX_SCALE * CELL, wy = (py + 0.5) / TEX_SCALE * CELL;
+          const sc = clamp(Math.log1p(sim.preyScent[sim.scentIdx(wx, wy)]) / 3, 0, 1);
+          [r, g, bl] = b.color;
+          r = lerp(r * 0.5, 255, sc * 0.9); g = lerp(g * 0.5, 170, sc * 0.9); bl = lerp(bl * 0.5, 60, sc * 0.9);
         } else if (this.mapMode === 'fert') {
           // żyzność biomu × składniki odżywcze w glebie (odchody i rozkładające się ciała)
           const f = clamp(b.fert * sim.fertMul * (0.35 + 0.65 * Math.min(sim.nutr[ci], 2)) / 1.8, 0, 1);

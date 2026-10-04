@@ -35,6 +35,8 @@ export const DEFAULTS = {
   reproCost: 1,
   parentalCare: true,
   packHunting: true,
+  territoriality: false,
+  immigration: true,
 
   // Ewolucja
   mutationScale: 1,
@@ -75,6 +77,8 @@ export const SCHEMA = [
   { group: 'creatures', key: 'maturity', label: 'Dojrzałość (część życia)', min: 0.02, max: 0.5, step: 0.01, tip: 'Po jakiej części życia stworek może się rozmnażać.' },
   { group: 'creatures', key: 'parentalCare', label: 'Opieka nad młodymi', type: 'bool' },
   { group: 'creatures', key: 'packHunting', label: 'Premia za polowanie w stadzie', type: 'bool' },
+  { group: 'creatures', key: 'territoriality', label: 'Terytorialność drapieżników', type: 'bool', tip: 'Drapieżnik nie rozmnaża się, gdy w promieniu 300 jest 10+ osobników jego gatunku. W małym świecie zwykle przyspiesza wymieranie.' },
+  { group: 'sim', key: 'immigration', label: 'Imigracja drapieżników (efekt ratunkowy)', type: 'bool', tip: 'Gdy drapieżników prawie nie ma, a ofiar jest dużo, z sąsiednich terenów (krawędź mapy) przychodzi para z genami wcześniejszych, udanych łowców. Tak w przyrodzie małe populacje ratuje napływ osobników z zewnątrz.' },
   { group: 'creatures', key: 'reproCost', label: 'Koszt rozmnażania', min: 0.2, max: 3, step: 0.05 },
 
   { group: 'evo', key: 'mutationScale', label: 'Mnożnik mutacji', min: 0, max: 5, step: 0.05, tip: 'Każdy stworek ma też własny gen „tempo mutacji”, który może ewoluować. To jest globalny mnożnik.' },
