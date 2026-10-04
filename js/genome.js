@@ -9,7 +9,7 @@ export const TRAITS = [
   { key: 'speed', name: 'Prędkość', min: 0.4, max: 2.8, def: 1.3, fmt: 2, desc: 'Maksymalna prędkość. Ruch kosztuje energię proporcjonalnie do kwadratu prędkości.' },
   { key: 'vision', name: 'Zasięg wzroku', min: 25, max: 220, def: 90, fmt: 0, desc: 'Jak daleko stworek widzi. Dalszy wzrok kosztuje energię.' },
   { key: 'fov', name: 'Pole widzenia', min: 60, max: 360, def: 220, fmt: 0, unit: '°', desc: 'Szerokie pole (jak u ofiar) pozwala zauważyć drapieżnika z boku, ale skraca zasięg. Wąskie (jak u drapieżników) — daleko, ale tylko przed sobą.' },
-  { key: 'diet', name: 'Mięsożerność', min: 0, max: 1, def: 0.1, fmt: 2, desc: '0 = czysty roślinożerca, 1 = czysty mięsożerca. Wszystkożercy trawią oba pokarmy, ale słabiej.' },
+  { key: 'diet', name: 'Mięsożerność', min: 0, max: 1, def: 0.1, fmt: 2, desc: '0 = czysty roślinożerca, 1 = czysty mięsożerca. Specjalizacja się opłaca: wszystkożerca (0,5) trawi każdy pokarm tylko w ok. 1/3.' },
   { key: 'tempOpt', name: 'Optymalna temp.', min: -15, max: 45, def: 16, fmt: 1, unit: '°C', desc: 'Temperatura komfortu. Odchylenie o więcej niż 9°C kosztuje energię.' },
   { key: 'toxRes', name: 'Odporność na toksyny', min: 0, max: 1, def: 0.1, fmt: 2, desc: 'Chroni przed trującymi roślinami, ale zwiększa metabolizm.' },
   { key: 'fertility', name: 'Płodność', min: 0, max: 1, def: 0.5, fmt: 2, desc: 'Wysoka: częste, tanie, ale małe i słabe potomstwo (strategia r). Niska: rzadkie, duże i silne (strategia K).' },

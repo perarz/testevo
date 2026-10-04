@@ -30,6 +30,7 @@ python3 -m http.server 8000
   - kamuflaż kłóci się z doborem płciowym;
   - wybór między strategią r (dużo małych młodych) a K (mniej, ale większych).
 - **Drapieżniki i ofiary**: tropienie zapachu (mapa zapachów ofiar, padliny i pastwisk), wędrówka napędzana głodem, omijanie wody i trudnego terenu; ruch zdradza (opłaca się zasadzka i zamieranie), drapieżnik wybiera słabe ofiary, jedzące zwierzę gorzej wypatruje zagrożeń, mięsożercy najadają się na zapas i poszczą, głodne zwierzęta w spoczynku zwalniają metabolizm, termotaksja (wędrówka w stronę lepszej temperatury). Drapieżniki polują w stadach: dołączają do polującego pobratymca, a wspólny atak zadaje więcej obrażeń. Roślinożercy mogą zająć najwyżej 85% limitu populacji, żeby drapieżniki zawsze miały miejsce na potomstwo.
+- **Ekonomia pokarmu**: specjalizacja w trawieniu (wszystkożerca 0,5 trawi każdy pokarm w ok. 1/3), ilość mięsa zależy od kondycji ciała, na starcie drapieżników jest ok. 5%.
 - **Polowanie**: skok na ofiarę z bliska, chwyt, węch z bliska mimo kamuflażu, skupienie uwagi na widocznym celu, bezwładność skrętu. Imigracja drapieżników z sąsiednich terenów (efekt ratunkowy) i opcjonalna terytorialność.
 - **Dwie płcie i dobór płciowy**: samica ponosi większy koszt rozrodu i wybiera partnera po kolorze. Różne preferencje mogą rozdzielić populację na gatunki.
 - **Cykl życia**: młode rodzą się małe, rosną, trzymają się rodzica, a ten je karmi (gen „Opieka nad młodymi”; matka mocniej niż ojciec). Po około 70% życia zaczyna się starzenie, a ryzyko śmierci rośnie wykładniczo (prawo Gompertza).

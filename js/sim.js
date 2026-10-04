@@ -42,7 +42,7 @@ export const DEFAULT_WORLD_OPTS = {
   initialCreatures: 90,
   initialPlants: 1000,
   initialDiet: 0.1,
-  carnivoreShare: 0.1,
+  carnivoreShare: 0.05,
   diversity: 0.5,
   brain: 'instinct',
 };
@@ -509,7 +509,8 @@ export class Sim {
     this.nutr[ci] = Math.min(3, this.nutr[ci] + cost * 0.06);
 
     // --- Jedzenie ---
-    const plantEff = 1 - t.diet, meatEff = t.diet;
+    // specjalizacja: trawienie rośnie nieliniowo, więc „pół na pół” daje razem ok. 2/3, a nie 100%
+    const plantEff = Math.pow(1 - t.diet, 1.6), meatEff = Math.pow(t.diet, 1.6);
     c.eating = false;
     if (bp && plantEff > 0.03 && c.energy < c.maxE && bpd < (c.r + 3) ** 2) {
       // zjadanie zostawia korzeń — roślina odrasta
@@ -529,6 +530,7 @@ export class Sim {
       const gain = bite * meatEff * cfg.meatNutrition;
       c.energy += gain;
       c.eatenMeat += gain;
+      if (bm.kill) c.eatenKill = (c.eatenKill || 0) + gain;
       c.eating = true;
       c.lastMeal = this.tick;
     }
@@ -677,7 +679,8 @@ export class Sim {
     const sp = this.species.get(c.sp);
     if (sp) sp.count = Math.max(0, sp.count - 1);
     if (cause !== 'meteor') {
-      this.meat.push({ x: c.x, y: c.y, energy: 100 * c.m + Math.max(0, c.energy) * 0.5, age: 0 });
+      // ilość mięsa zależy od kondycji: zagłodzone ciało to głównie skóra i kości
+      this.meat.push({ x: c.x, y: c.y, energy: 100 * c.m * (0.25 + 0.75 * clamp(c.energy / (100 * c.m), 0, 1)), age: 0, kill: cause === 'predation' });
     }
     const ni = this.terrain.idx(c.x, c.y);
     this.nutr[ni] = Math.min(3, this.nutr[ni] + 0.2 * c.m);
