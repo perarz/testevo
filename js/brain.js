@@ -8,16 +8,16 @@ export const INPUTS = [
   'Roślina: kierunek', 'Roślina: bliskość',
   'Mięso: kierunek', 'Mięso: bliskość',
   'Zagrożenie: kierunek', 'Zagrożenie: bliskość',
-  'Ofiara: kierunek', 'Ofiara: bliskość',
+  'Ofiara: kierunek', 'Ofiara: bliskość', 'Ofiara: osłabienie',
   'Stado: kierunek', 'Stado: liczebność',
   'Partner: kierunek', 'Partner: bliskość',
-  'Temperatura (stres)', 'Teren przed sobą', 'Gotowy do godów', 'Kondycja (sprint)',
+  'Temperatura (stres)', 'Lepsza temp.: lewo/prawo', 'Teren przed sobą', 'Gotowy do godów', 'Kondycja (sprint)',
   'Pamięć 1', 'Pamięć 2', 'Zegar wewnętrzny', 'Stała (bias)',
 ];
 export const OUTPUTS = ['Skręt', 'Ruch', 'Chęć godów', 'Atak', 'Pamięć 1', 'Pamięć 2'];
 export const IN = Object.fromEntries([
-  'energy', 'hp', 'age', 'plantA', 'plantD', 'meatA', 'meatD', 'threatA', 'threatD', 'preyA', 'preyD',
-  'herdA', 'herdN', 'mateA', 'mateD', 'temp', 'terrain', 'ready', 'stamina', 'mem1', 'mem2', 'clock', 'bias',
+  'energy', 'hp', 'age', 'plantA', 'plantD', 'meatA', 'meatD', 'threatA', 'threatD', 'preyA', 'preyD', 'preyWeak',
+  'herdA', 'herdN', 'mateA', 'mateD', 'temp', 'tempDir', 'terrain', 'ready', 'stamina', 'mem1', 'mem2', 'clock', 'bias',
 ].map((k, i) => [k, i]));
 export const NI = INPUTS.length, NH = 12, NO = OUTPUTS.length;
 export const W1 = NH * (NI + 1), W2 = NO * (NH + 1);
@@ -35,8 +35,8 @@ export function instinctWeights(noise = 0.25, diet = 0.1) {
   const s1 = (h, inp, v) => { w[h * (NI + 1) + inp] = v; };
   const s2 = (o, h, v) => { w[W1 + o * (NH + 1) + h] = v; };
   // neurony z instynktem mają mniej szumu
-  for (let h = 0; h < 8; h++) for (let i = 0; i <= NI; i++) w[h * (NI + 1) + i] *= 0.3;
-  for (let o = 0; o < NO; o++) for (let h = 0; h < 8; h++) w[W1 + o * (NH + 1) + h] *= 0.3;
+  for (let h = 0; h < 9; h++) for (let i = 0; i <= NI; i++) w[h * (NI + 1) + i] *= 0.3;
+  for (let o = 0; o < NO; o++) for (let h = 0; h < 9; h++) w[W1 + o * (NH + 1) + h] *= 0.3;
   const herb = 1 - diet, carn = Math.max(0, diet - 0.3);
   // h0: skręt w stronę pożywienia (rośliny, mięso, ofiara — zależnie od diety)
   s1(0, IN.plantA, 2.4 * herb);
@@ -49,6 +49,9 @@ export function instinctWeights(noise = 0.25, diet = 0.1) {
   // h2: „idź do przodu” spokojnym tempem
   s1(2, IN.bias, 1.5); s1(2, IN.energy, -0.4 - 1.4 * diet); // najedzony odpoczywa (zwłaszcza drapieżnik)
   s2(1, 2, 0.8);
+  // h8: termotaksja — skręt w stronę lepszej temperatury (sygnał rośnie z dyskomfortem)
+  s1(8, IN.tempDir, 2.0);
+  s2(0, 8, 1.2);
   // h7: sprint — przy ucieczce przed zagrożeniem albo w pościgu za ofiarą
   s1(7, IN.threatD, 3 * herb); s1(7, IN.preyD, 3 * carn * 2); s1(7, IN.bias, -0.6);
   s2(1, 7, 1.6);
@@ -56,7 +59,7 @@ export function instinctWeights(noise = 0.25, diet = 0.1) {
   s1(3, IN.ready, 2.5); s1(3, IN.bias, -0.8);
   s2(2, 3, 2.0);
   // h4: atak na bliską ofiarę, tylko gdy głodny (mięsożercy)
-  s1(4, IN.preyD, 3.2 * diet); s1(4, IN.energy, -2.5 * diet); s1(4, IN.bias, -1.6);
+  s1(4, IN.preyD, 3.2 * diet); s1(4, IN.preyWeak, 1.2 * diet); s1(4, IN.energy, -2.5 * diet); s1(4, IN.bias, -1.6);
   s2(3, 4, 2.5 * diet); s2(3, 2, -1.0);
   // h5: ucieczka — skręt od zagrożenia (gdy nic nie grozi, kierunek = 0 i neuron milczy)
   s1(5, IN.threatA, 2.5);

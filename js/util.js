@@ -59,32 +59,39 @@ export function makeNoise(rng) {
   };
 }
 
-// Prosta siatka przestrzenna do szybkiego wyszukiwania sąsiadów.
+// Siatka przestrzenna do szybkiego wyszukiwania sąsiadów (listy jednokierunkowe na tablicach typowanych —
+// czyszczenie i wstawianie nie tworzą nowych obiektów).
 export class Grid {
   constructor(w, h, cell) {
     this.cell = cell;
     this.cols = Math.ceil(w / cell);
     this.rows = Math.ceil(h / cell);
-    this.cells = Array.from({ length: this.cols * this.rows }, () => []);
+    this.head = new Int32Array(this.cols * this.rows).fill(-1);
+    this.next = new Int32Array(1024);
+    this.items = [];
   }
-  clear() { for (const c of this.cells) c.length = 0; }
+  clear() { this.head.fill(-1); this.items.length = 0; }
   insert(o) {
     const cx = clamp(Math.floor(o.x / this.cell), 0, this.cols - 1);
     const cy = clamp(Math.floor(o.y / this.cell), 0, this.rows - 1);
-    this.cells[cy * this.cols + cx].push(o);
+    const ci = cy * this.cols + cx;
+    const i = this.items.length;
+    this.items.push(o);
+    if (i >= this.next.length) { const n = new Int32Array(this.next.length * 2); n.set(this.next); this.next = n; }
+    this.next[i] = this.head[ci];
+    this.head[ci] = i;
   }
   // Wywołuje fn(obj) dla obiektów w komórkach pokrywających okrąg.
   query(x, y, r, fn) {
-    const c = this.cell;
-    const x0 = clamp(Math.floor((x - r) / c), 0, this.cols - 1);
-    const x1 = clamp(Math.floor((x + r) / c), 0, this.cols - 1);
+    const c = this.cell, cols = this.cols, head = this.head, next = this.next, items = this.items;
+    const x0 = clamp(Math.floor((x - r) / c), 0, cols - 1);
+    const x1 = clamp(Math.floor((x + r) / c), 0, cols - 1);
     const y0 = clamp(Math.floor((y - r) / c), 0, this.rows - 1);
     const y1 = clamp(Math.floor((y + r) / c), 0, this.rows - 1);
     for (let cy = y0; cy <= y1; cy++) {
-      const row = cy * this.cols;
+      const row = cy * cols;
       for (let cx = x0; cx <= x1; cx++) {
-        const arr = this.cells[row + cx];
-        for (let i = 0; i < arr.length; i++) fn(arr[i]);
+        for (let i = head[row + cx]; i !== -1; i = next[i]) fn(items[i]);
       }
     }
   }

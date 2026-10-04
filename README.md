@@ -18,10 +18,10 @@ python3 -m http.server 8000
 
 ## Co jest w środku
 
-- **Świat 2D z biomami** (woda, plaże, pustynie, stepy, łąki, lasy, tundra, góry, skały). Na północy jest zimno, na południu gorąco, są pory roku, a zimą pada śnieg. Do tego **widok 3D** (przycisk „3D” albo klawisz V).
+- **Duży świat 2400×1500** (limit 250 stworków i 1500 roślin) z biomami (woda, plaże, pustynie, stepy, łąki, lasy, tundra, góry, skały). Na północy jest zimno, na południu gorąco, są pory roku, a zimą pada śnieg. Do tego **widok 3D** (przycisk „3D” albo klawisz V).
 - **Genetyka diploidalna**: każda cecha ma dwa allele, po jednym od matki i ojca, a fenotyp to ich średnia. Dziedziczenie działa według prawa Mendla, mutacje dotyczą pojedynczych alleli (drobne i rzadkie duże).
 - **Geny**: rozmiar, prędkość, zasięg wzroku, pole widzenia, mięsożerność, optymalna temperatura, odporność na toksyny, płodność, długość życia, tempo mutacji (samo ewoluuje), ubarwienie, preferowana barwa partnera i wybredność.
-- **Sieć neuronowa** (24 wejścia → 12 neuronów → 6 wyjść, z dwiema komórkami pamięci), której wagi są w genach. Stworek widzi tylko w swoim polu widzenia: najbliższą roślinę, mięso, zagrożenie, ofiarę i stado. Partnera słyszy z daleka. Zna swoją energię, zdrowie, wiek, kondycję i temperaturę. Startowe instynkty (jedz, uciekaj, trzymaj się stada, szukaj partnera, odpoczywaj po posiłku, sprintuj w pościgu) ewolucja może zmieniać.
+- **Sieć neuronowa** (26 wejść → 12 neuronów → 6 wyjść, z dwiema komórkami pamięci), której wagi są w genach. Stworek widzi tylko w swoim polu widzenia: najbliższą roślinę, mięso, zagrożenie, ofiarę i stado. Partnera słyszy z daleka. Zna swoją energię, zdrowie, wiek, kondycję i temperaturę. Startowe instynkty (jedz, uciekaj, trzymaj się stada, szukaj partnera, odpoczywaj po posiłku, sprintuj w pościgu) ewolucja może zmieniać.
 - **Kompromisy**:
   - większe ciało daje zapas energii, wygrane walki i odporność na zimno, ale więcej kosztuje i dłużej dorasta;
   - koszt ruchu rośnie z kwadratem prędkości;
@@ -29,6 +29,7 @@ python3 -m http.server 8000
   - szerokie pole widzenia skraca zasięg wzroku;
   - kamuflaż kłóci się z doborem płciowym;
   - wybór między strategią r (dużo małych młodych) a K (mniej, ale większych).
+- **Drapieżniki i ofiary**: ruch zdradza (opłaca się zasadzka i zamieranie), drapieżnik wybiera słabe ofiary, jedzące zwierzę gorzej wypatruje zagrożeń, mięsożercy najadają się na zapas i poszczą, głodne zwierzęta w spoczynku zwalniają metabolizm, termotaksja (wędrówka w stronę lepszej temperatury). Roślinożercy mogą zająć najwyżej 85% limitu populacji, żeby drapieżniki zawsze miały miejsce na potomstwo.
 - **Dwie płcie i dobór płciowy**: samica ponosi większy koszt rozrodu i wybiera partnera po kolorze. Różne preferencje mogą rozdzielić populację na gatunki.
 - **Cykl życia**: młode rodzą się małe i rosną. Po około 70% życia zaczyna się starzenie, a ryzyko śmierci rośnie wykładniczo (prawo Gompertza).
 - **Gatunki** wykrywane automatycznie (odległość genetyczna, izolacja rozrodcza), z nazwami, kolorami i drzewem filogenetycznym.

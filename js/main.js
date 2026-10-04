@@ -1,6 +1,6 @@
 // Punkt startowy: pętla symulacji, obsługa myszy i klawiatury, zapis/odczyt.
 import { DEFAULTS } from './config.js';
-import { Sim } from './sim.js';
+import { Sim, WORLD_W, WORLD_H } from './sim.js';
 import { Renderer } from './render.js';
 import { UI, TOOLS, downloadJSON } from './ui.js';
 
@@ -180,7 +180,7 @@ function onMove(e) {
     let tx = e.offsetX + 14, ty = e.offsetY + 14;
     if (tx + 240 > mainRect.width) tx = e.offsetX - 250;
     tip.style.left = tx + 'px'; tip.style.top = ty + 'px';
-  } else if (w.x >= 0 && w.y >= 0 && w.x < 1600 && w.y < 1000 && !drag) {
+  } else if (w.x >= 0 && w.y >= 0 && w.x < WORLD_W && w.y < WORLD_H && !drag) {
     const b = app.sim.terrain.at(w.x, w.y);
     const T = app.sim.terrain.tempAt(w.x, w.y) + app.sim.tempOffset;
     tip.innerHTML = `${b.name} <span class="muted">· ${T.toFixed(1)}°C</span>`;

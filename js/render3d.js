@@ -9,7 +9,7 @@ import { clamp, lerp, makeNoise, mulberry32 } from './util.js';
 
 const HX = WORLD_W / 2, HZ = WORLD_H / 2;
 const LAND_K = 300, SEA_K = 220;
-const MAX_PLANTS = 2000, MAX_MEAT = 500, MAX_CREATURES = 150;
+const MAX_PLANTS = 3000, MAX_MEAT = 800, MAX_CREATURES = 420;
 
 const GLOW_VS = `
 attribute float size;
@@ -40,14 +40,14 @@ export class Renderer3D {
     this.gl.outputColorSpace = THREE.SRGBColorSpace;
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color('#05070a');
-    this.scene.fog = new THREE.FogExp2('#05070a', 0.00032);
-    this.camera = new THREE.PerspectiveCamera(50, 1, 2, 6000);
+    this.scene.fog = new THREE.FogExp2('#05070a', 0.00022);
+    this.camera = new THREE.PerspectiveCamera(50, 1, 2, 9000);
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.12;
     this.controls.maxPolarAngle = 1.42;
     this.controls.minDistance = 25;
-    this.controls.maxDistance = 2600;
+    this.controls.maxDistance = 3800;
     this.controls.screenSpacePanning = false;
     this.controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
 
@@ -55,7 +55,7 @@ export class Renderer3D {
     this.hemi = new THREE.HemisphereLight('#b8ccff', '#3a2a18', 2.0);
     this.scene.add(this.hemi);
     this.sun = new THREE.DirectionalLight('#fff1d6', 2.4);
-    this.sun.position.set(-600, 900, 400);
+    this.sun.position.set(-900, 1350, 600);
     this.scene.add(this.sun);
     this.scene.add(new THREE.AmbientLight('#ffffff', 0.55));
 
@@ -257,8 +257,8 @@ export class Renderer3D {
     this.glowMat.uniforms.uScale.value = r.height * this.gl.getPixelRatio() / 2 / Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
   }
   fit() {
-    this.controls.target.set(0, 0, 30);
-    this.camera.position.set(0, 1150, 900);
+    this.controls.target.set(0, 0, 45);
+    this.camera.position.set(0, 1720, 1350);
     this.controls.update();
   }
   followTarget(c) {

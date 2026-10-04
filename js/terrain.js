@@ -38,7 +38,7 @@ export class Terrain {
     for (let y = 0; y < this.rows; y++) {
       for (let x = 0; x < this.cols; x++) {
         const i = y * this.cols + x;
-        const nx = x / this.cols * 4.5, ny = y / this.rows * 3;
+        const nx = x / 80 * 4.5, ny = y / 50 * 3; // ta sama skala cech terenu niezależnie od rozmiaru mapy
         let e = fe(nx, ny, 5);
         // grzbiety górskie
         const ridge = 1 - Math.abs(fr(nx * 0.8 + 10, ny * 0.8, 4) * 2 - 1);

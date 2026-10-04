@@ -2,8 +2,8 @@
 
 export const DEFAULTS = {
   // Symulacja
-  maxCreatures: 100,
-  minCreatures: 18,
+  maxCreatures: 250,
+  minCreatures: 30,
   assistPopulation: true,
   yearLength: 3600,
 
@@ -15,7 +15,7 @@ export const DEFAULTS = {
   disasterRate: 0.2,
 
   // Rośliny
-  maxPlants: 650,
+  maxPlants: 1500,
   plantGrowth: 1,
   plantSeedRate: 1,
   plantSpontaneous: 0.5,
@@ -44,7 +44,7 @@ export const DEFAULTS = {
 
 // Schemat wykorzystywany do zbudowania suwaków w panelu.
 export const SCHEMA = [
-  { group: 'sim', key: 'maxCreatures', label: 'Maks. liczba stworków', min: 10, max: 100, step: 1, tip: 'Twardy limit populacji: przy pełnej populacji nowe stworki się nie rodzą.' },
+  { group: 'sim', key: 'maxCreatures', label: 'Maks. liczba stworków', min: 10, max: 400, step: 5, tip: 'Limit wydajności. Roślinożercy mogą zająć najwyżej 85% miejsc, żeby zawsze zostało miejsce na rozród drapieżników i wszystkożerców.' },
   { group: 'sim', key: 'minCreatures', label: 'Wsparcie populacji poniżej', min: 0, max: 50, step: 1, tip: 'Gdy populacja spadnie poniżej tej liczby, pojawiają się nowe osobniki powstałe z genów najlepiej przystosowanych zmarłych. Zapobiega wymarciu na starcie.' },
   { group: 'sim', key: 'assistPopulation', label: 'Wsparcie populacji włączone', type: 'bool' },
   { group: 'sim', key: 'yearLength', label: 'Długość roku (ticki)', min: 600, max: 12000, step: 100, tip: '60 ticków to 1 sekunda przy prędkości x1.' },
@@ -55,7 +55,7 @@ export const SCHEMA = [
   { group: 'world', key: 'randomDisasters', label: 'Losowe katastrofy', type: 'bool' },
   { group: 'world', key: 'disasterRate', label: 'Częstość katastrof (na rok)', min: 0, max: 3, step: 0.05 },
 
-  { group: 'plants', key: 'maxPlants', label: 'Maks. liczba roślin', min: 50, max: 1500, step: 10 },
+  { group: 'plants', key: 'maxPlants', label: 'Maks. liczba roślin', min: 50, max: 3000, step: 10 },
   { group: 'plants', key: 'plantGrowth', label: 'Tempo wzrostu', min: 0, max: 4, step: 0.05 },
   { group: 'plants', key: 'plantSeedRate', label: 'Rozsiewanie nasion', min: 0, max: 5, step: 0.05 },
   { group: 'plants', key: 'plantSpontaneous', label: 'Nasiona z wiatrem (na sek.)', min: 0, max: 5, step: 0.05, tip: 'Losowe nowe rośliny pojawiające się w dowolnym miejscu mapy.' },

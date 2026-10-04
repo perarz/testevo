@@ -579,8 +579,8 @@ export class UI {
       { key: 'mountains', label: 'Góry', min: 0, max: 1.5, step: 0.05 },
       { key: 'tempNorth', label: 'Temperatura na północy (°C)', min: -30, max: 30, step: 1 },
       { key: 'tempSouth', label: 'Temperatura na południu (°C)', min: 0, max: 50, step: 1 },
-      { key: 'initialCreatures', label: 'Startowa liczba stworków', min: 2, max: 100, step: 1 },
-      { key: 'initialPlants', label: 'Startowa liczba roślin', min: 50, max: 1500, step: 10 },
+      { key: 'initialCreatures', label: 'Startowa liczba stworków', min: 2, max: 250, step: 1 },
+      { key: 'initialPlants', label: 'Startowa liczba roślin', min: 50, max: 3000, step: 10 },
       { key: 'initialDiet', label: 'Startowa mięsożerność', min: 0, max: 1, step: 0.01 },
       { key: 'carnivoreShare', label: 'Udział drapieżników na start', min: 0, max: 0.6, step: 0.01 },
       { key: 'diversity', label: 'Startowa różnorodność genów', min: 0, max: 1.5, step: 0.05 },
@@ -609,8 +609,8 @@ export class UI {
       ['Superkontynent', { waterLevel: 0.22, mountains: 0.8 }],
       ['Mroźny świat', { tempNorth: -22, tempSouth: 12 }],
       ['Tropiki', { tempNorth: 16, tempSouth: 42 }],
-      ['Drapieżnicy', { carnivoreShare: 0.3, initialCreatures: 60 }],
-      ['Czysta ewolucja', { brain: 'random', diversity: 1.2, initialCreatures: 70 }],
+      ['Drapieżnicy', { carnivoreShare: 0.25, initialCreatures: 140 }],
+      ['Czysta ewolucja', { brain: 'random', diversity: 1.2, initialCreatures: 150 }],
     ];
     $('#presets').innerHTML = PRESETS.map(([n], i) => `<button class="btn small" data-preset="${i}">${esc(n)}</button>`).join('');
     $('#presets').onclick = e => {

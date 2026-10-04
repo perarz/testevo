@@ -9,8 +9,8 @@ import {
 } from './genome.js';
 import { SpeciesTracker } from './species.js';
 
-export const WORLD_W = 1600;
-export const WORLD_H = 1000;
+export const WORLD_W = 2400;
+export const WORLD_H = 1500;
 
 export const DEATH_CAUSES = {
   starvation: 'Głód',
@@ -39,13 +39,20 @@ export const DEFAULT_WORLD_OPTS = {
   mountains: 0.5,
   tempNorth: -2,
   tempSouth: 34,
-  initialCreatures: 40,
-  initialPlants: 450,
+  initialCreatures: 90,
+  initialPlants: 1000,
   initialDiet: 0.1,
   carnivoreShare: 0.1,
   diversity: 0.5,
   brain: 'instinct',
 };
+
+// usuwa elementy w miejscu (bez tworzenia nowej tablicy)
+function compact(arr, keep) {
+  let j = 0;
+  for (let i = 0; i < arr.length; i++) if (keep(arr[i])) arr[j++] = arr[i];
+  arr.length = j;
+}
 
 export function dietClass(d) { return d < 0.33 ? 0 : d < 0.66 ? 1 : 2; }
 
@@ -262,20 +269,26 @@ export class Sim {
     this.updateEnvironment();
 
     this.creatureGrid.clear();
-    this.plantGrid.clear();
-    this.meatGrid.clear();
     for (const c of this.creatures) if (!c.dead) this.creatureGrid.insert(c);
-    for (const p of this.plants) if (!p.dead) this.plantGrid.insert(p);
-    for (const m of this.meat) this.meatGrid.insert(m);
+    // rośliny i mięso się nie ruszają — ich siatki wystarczy odświeżać co kilka ticków
+    // (martwe są pomijane w zapytaniach, a nowe pojawiają się z małym opóźnieniem)
+    if (this.tick % 6 === 0 || this.plantGrid.items.length === 0) {
+      this.plantGrid.clear();
+      for (const p of this.plants) if (!p.dead) this.plantGrid.insert(p);
+    }
+    if (this.tick % 3 === 0) {
+      this.meatGrid.clear();
+      for (const m of this.meat) this.meatGrid.insert(m);
+    }
 
     for (const c of this.creatures) if (!c.dead) this.updateCreature(c);
     this.updatePlants();
     this.updateMeat();
 
     // sprzątanie
-    if (this.creatures.some(c => c.dead)) this.creatures = this.creatures.filter(c => !c.dead);
+    compact(this.creatures, c => !c.dead);
     if (this.newborn.length) { for (const c of this.newborn) this.creatures.push(c); this.newborn.length = 0; }
-    if (this.plants.some(p => p.dead)) this.plants = this.plants.filter(p => !p.dead);
+    compact(this.plants, p => !p.dead);
     if (this.newPlants.length) { for (const p of this.newPlants) this.plants.push(p); this.newPlants.length = 0; }
 
     this.assistPopulation();
@@ -290,7 +303,7 @@ export class Sim {
     const oldHp = c.maxHp || 1;
     c.r = t.size * c.gf;
     c.m = (c.r / 6) ** 2;
-    c.maxE = 100 * c.m;
+    c.maxE = 100 * c.m * (1 + 0.7 * t.diet); // mięsożercy mogą się „obżerać” i długo pościć
     c.maxHp = 50 * c.m;
     c.hp = c.hp === undefined ? c.maxHp : c.hp * c.maxHp / oldHp;
     if (c.energy > c.maxE) c.energy = c.maxE;
@@ -327,7 +340,7 @@ export class Sim {
       if (d < bpd && seen(p.x, p.y, d, 0)) { bpd = d; bp = p; }
     });
     this.meatGrid.query(cx, cy, vis, m => {
-      if (m.energy <= 0) return;
+      if (m.energy <= 0.5) return;
       const d = (m.x - cx) ** 2 + (m.y - cy) ** 2;
       if (d < bmd && seen(m.x, m.y, d, 0)) { bmd = d; bm = m; }
     });
@@ -338,20 +351,32 @@ export class Sim {
     let bthreat = null, btd = Infinity, bprey = null, bpyd = Infinity, bnear = null, bnd = Infinity;
     let hx = 0, hy = 0, hn = 0;
     const iAmPredator = t.diet > 0.3;
-    this.creatureGrid.query(cx, cy, hear, o => {
+    let bpw = 0, bpyScore = Infinity;
+    // czujność: zwierzę z głową w trawie gorzej wypatruje drapieżników
+    const vigil = c.eating ? 0.35 : 1;
+    // daleki „słuch” potrzebny jest tylko gotowym do godów; reszta przeszukuje okolicę w zasięgu wzroku
+    this.creatureGrid.query(cx, cy, c.ready ? hear : vis, o => {
       if (o === c || o.dead) return;
       const dx = o.x - cx, dy = o.y - cy, d = dx * dx + dy * dy;
       const kin = o.sp === c.sp;
       if (d < bnd) { bnd = d; bnear = o; }
       if (o.ready && c.ready && o.sex !== c.sex && d < bmated && (kin || distVec(c.vec, o.vec) < mateThr)) { bmated = d; bmate = o; }
-      // kamuflaż: stworek w kolorze otoczenia jest widoczny z mniejszej odległości
+      // kamuflaż (kolor jak otoczenie) i bezruch (ruch zdradza) zmniejszają odległość, z której widać stworka
       const ob = T.at(o.x, o.y);
-      const camo = 0.6 + 0.4 * hueDist(o.g.t.hue, ob.hue) / 180;
-      if (d > vis2 * camo * camo || !seen(o.x, o.y, d, o.r)) return;
+      const camo = 0.65 + 0.35 * hueDist(o.g.t.hue, ob.hue) / 180;
+      const motion = 0.72 + 0.28 * Math.min(1, o.speedNow / 0.9);
+      const vf = camo * motion;
+      if (d > vis2 * vf * vf || !seen(o.x, o.y, d, o.r)) return;
       if (kin) { hx += dx; hy += dy; hn++; return; }
       const od = o.g.t.diet;
-      if (od > 0.45 && o.r > c.r * 0.6 && od > t.diet - 0.2 && d < btd) { btd = d; bthreat = o; }
-      if (iAmPredator && o.r < c.r * 1.4 && d < bpyd) { bpyd = d; bprey = o; }
+      if (od > 0.45 && o.r > c.r * 0.6 && od > t.diet - 0.2 && d < btd && d < vis2 * vf * vf * vigil) { btd = d; bthreat = o; }
+      if (iAmPredator && o.r < c.r * 1.4) {
+        // drapieżnik woli słabe ofiary: młode, stare, ranne, chore
+        const oa = o.age / (o.g.t.lifespan * yl);
+        const weak = clamp(Math.max(1 - o.hp / o.maxHp, (1 - o.gf) * 1.6, (oa - 0.7) * 2.5, o.infected ? 0.6 : 0), 0, 1);
+        const score = d * (1 - 0.65 * weak);
+        if (score < bpyScore) { bpyScore = score; bpyd = d; bprey = o; bpw = weak; }
+      }
     });
 
     const inp = c.inp;
@@ -363,10 +388,21 @@ export class Sim {
     if (bp) { inp[IN.plantA] = rel(bp.x, bp.y); inp[IN.plantD] = near(bpd, vis); } else { inp[IN.plantA] = 0; inp[IN.plantD] = 0; }
     if (bm) { inp[IN.meatA] = rel(bm.x, bm.y); inp[IN.meatD] = near(bmd, vis); } else { inp[IN.meatA] = 0; inp[IN.meatD] = 0; }
     if (bthreat) { inp[IN.threatA] = rel(bthreat.x, bthreat.y); inp[IN.threatD] = Math.max(0, near(btd, vis)); } else { inp[IN.threatA] = 0; inp[IN.threatD] = 0; }
-    if (bprey) { inp[IN.preyA] = rel(bprey.x, bprey.y); inp[IN.preyD] = Math.max(0, near(bpyd, vis)); } else { inp[IN.preyA] = 0; inp[IN.preyD] = 0; }
+    if (bprey) { inp[IN.preyA] = rel(bprey.x, bprey.y); inp[IN.preyD] = Math.max(0, near(bpyd, vis)); inp[IN.preyWeak] = bpw; } else { inp[IN.preyA] = 0; inp[IN.preyD] = 0; inp[IN.preyWeak] = 0; }
     if (hn) { inp[IN.herdA] = rel(cx + hx / hn, cy + hy / hn); inp[IN.herdN] = Math.min(1, hn / 6); } else { inp[IN.herdA] = 0; inp[IN.herdN] = 0; }
     if (bmate) { inp[IN.mateA] = rel(bmate.x, bmate.y); inp[IN.mateD] = near(bmated, hear); } else { inp[IN.mateA] = 0; inp[IN.mateD] = 0; }
     inp[IN.temp] = clamp((localT - t.tempOpt) / 20, -1, 1);
+    // termotaksja: porównanie temperatury z przodu po lewej i po prawej (co kilka ticków, bo to wolna zmienna)
+    if (c.age % 8 === 0) {
+      const probe = da => {
+        const px = cx + Math.cos(ang + da) * 60, py = cy + Math.sin(ang + da) * 60;
+        if (!T.passable(px, py)) return -1e3;
+        return -Math.abs(T.tempAt(px, py) + this.tempOffset - t.tempOpt);
+      };
+      const here = Math.abs(localT - t.tempOpt);
+      c.tempDir = here > 4 ? clamp((probe(0.7) - probe(-0.7)) / 4, -1, 1) * Math.min(1, (here - 4) / 8) : 0;
+    }
+    inp[IN.tempDir] = c.tempDir || 0;
     const ax = cx + Math.cos(ang) * (c.r + 14), ay = cy + Math.sin(ang) * (c.r + 14);
     inp[IN.terrain] = T.passable(ax, ay) ? 1 - T.at(ax, ay).move : 1;
     inp[IN.ready] = c.ready ? 1 : 0;
@@ -401,6 +437,8 @@ export class Sim {
 
     // --- Koszty energetyczne ---
     let cost = 0.015 * c.m * cfg.metabolism * (1 + t.toxRes * 0.3 + t.lifespan / 5 * 0.25);
+    // głodne zwierzę w spoczynku zwalnia metabolizm (oszczędzanie energii)
+    if (c.energy < c.maxE * 0.35 && spd < t.speed * 0.3) cost *= 0.55;
     cost += 0.012 * cfg.moveCost * c.m * spd * spd;
     cost += 0.006 * cfg.visionCost * Math.pow(t.vision / 100, 1.3);
     cost += biome.cost * 0.02 * c.m * (spd > 0 ? 1 : 0.3);
@@ -415,6 +453,7 @@ export class Sim {
 
     // --- Jedzenie ---
     const plantEff = 1 - t.diet, meatEff = t.diet;
+    c.eating = false;
     if (bp && plantEff > 0.03 && c.energy < c.maxE && bpd < (c.r + 3) ** 2) {
       // zjadanie zostawia korzeń — roślina odrasta
       const bite = Math.min(bp.energy - 1, 1.5 * c.m + 0.5);
@@ -423,6 +462,7 @@ export class Sim {
       const gain = bite * plantEff * cfg.plantNutrition * (1 - tox);
       c.energy += gain;
       c.eatenPlant += gain;
+      c.eating = true;
       if (tox > 0.02) { c.hp -= bite * tox * 0.6; if (c.hp <= 0) { this.kill(c, 'toxin'); return; } }
     }
     if (bm && meatEff > 0.03 && c.energy < c.maxE && bmd < (c.r + 4) ** 2) {
@@ -431,6 +471,7 @@ export class Sim {
       const gain = bite * meatEff * cfg.meatNutrition;
       c.energy += gain;
       c.eatenMeat += gain;
+      c.eating = true;
     }
     if (c.energy > c.maxE) c.energy = c.maxE;
 
@@ -464,10 +505,10 @@ export class Sim {
     // --- Rozmnażanie (dwie płcie; samica ponosi większy koszt i wybiera partnera) ---
     const female = c.sex === 1;
     c.ready = mature && c.cooldown <= 0 && !c.infected && ageFrac < 1 &&
-      c.energy > c.maxE * (female ? 0.62 - 0.3 * t.fertility : 0.4) && c.hp > c.maxHp * 0.5;
+      c.energy > 100 * c.m * (female ? 0.62 - 0.3 * t.fertility : 0.4) && c.hp > c.maxHp * 0.5;
     if (c.ready && out[2] > 0 && bmate && bmate.ready && bmate.out[2] > 0 && !bmate.dead &&
       bmated < (c.r + bmate.r + 8) ** 2 &&
-      this.creatures.length + this.newborn.length < cfg.maxCreatures) {
+      this.roomFor(t.diet) > 0) {
       const f = female ? c : bmate, m = female ? bmate : c;
       const tolerance = 180 * (1 - f.g.t.choosy) + 20;
       if (hueDist(m.g.t.hue, f.g.t.prefHue) <= tolerance) this.mate(f, m);
@@ -479,14 +520,26 @@ export class Sim {
     if (ageFrac > 0.75 && (chance(0.00004 * Math.exp(9 * (ageFrac - 0.75))) || ageFrac > 1.4)) this.kill(c, 'age');
   }
 
+  // Ile jeszcze może się urodzić. Limit jest tylko zabezpieczeniem wydajności — żeby roślinożercy
+  // nie zapchali go w całości (i nie zablokowali rozrodu drapieżników), mogą zająć najwyżej 85% miejsc.
+  roomFor(diet) {
+    const max = this.cfg.maxCreatures;
+    const total = this.creatures.length + this.newborn.length;
+    if (diet >= 0.33) return max - total;
+    let herb = 0;
+    for (const c of this.creatures) if (c.g.t.diet < 0.33) herb++;
+    for (const c of this.newborn) if (c.g.t.diet < 0.33) herb++;
+    return Math.min(max - total, Math.floor(max * 0.85) - herb);
+  }
+
   // f — samica, m — samiec
   mate(f, m) {
     const cfg = this.cfg;
     const fert = f.g.t.fertility;
-    const invF = f.maxE * (0.42 - 0.22 * fert) * cfg.reproCost;
-    const invM = m.maxE * 0.08 * cfg.reproCost;
+    const invF = 100 * f.m * (0.42 - 0.22 * fert) * cfg.reproCost;
+    const invM = 100 * m.m * 0.08 * cfg.reproCost;
     f.energy -= invF; m.energy -= invM;
-    const room = cfg.maxCreatures - this.creatures.length - this.newborn.length;
+    const room = this.roomFor(f.g.t.diet);
     let kids = 1 + (chance(fert * 0.5) ? 1 : 0) + (fert > 0.7 && chance(0.35) ? 1 : 0);
     kids = Math.max(1, Math.min(kids, room));
     const pool = (invF * 0.85 + invM * 0.5) / kids;
@@ -494,7 +547,7 @@ export class Sim {
       const g = crossover(f.g, m.g, cfg);
       // strategia K (niska płodność) — większe noworodki
       const gf0 = 0.35 + 0.3 * (1 - fert);
-      const childMaxE = 100 * (g.t.size * gf0 / 6) ** 2;
+      const childMaxE = 100 * (g.t.size * gf0 / 6) ** 2 * (1 + 0.7 * g.t.diet);
       const ang = rand(0, TAU);
       let x = f.x + Math.cos(ang) * f.r * 1.5, y = f.y + Math.sin(ang) * f.r * 1.5;
       if (!this.terrain.passable(x, y)) { x = f.x; y = f.y; }
@@ -629,7 +682,7 @@ export class Sim {
       if ((m.age & 15) === 0) { const i = T.idx(m.x, m.y); this.nutr[i] = Math.min(3, this.nutr[i] + decay * 16 * 0.02); }
     }
     if (any) this.meat = this.meat.filter(m => m.energy > 0.5);
-    if (this.meat.length > 400) this.meat.splice(0, this.meat.length - 400);
+    if (this.meat.length > 800) this.meat.splice(0, this.meat.length - 800);
   }
 
   updateSpecies() {
@@ -768,6 +821,7 @@ export class Sim {
     if (!s || s.format !== 'ewolucja-save') throw new Error('To nie jest plik zapisu symulacji.');
     Object.assign(this.cfg, s.cfg);
     this.opts = s.opts;
+    if (s.terrain.biome.length !== Math.ceil(WORLD_W / 20) * Math.ceil(WORLD_H / 20)) throw new Error('Ten zapis pochodzi ze starszej wersji z mniejszą mapą i nie da się go wczytać.');
     this.terrain = Terrain.deserialize(WORLD_W, WORLD_H, s.terrain);
     this.initState();
     this.tick = s.tick;
